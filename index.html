@@ -2,131 +2,291 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>N-picture | 公式サイト</title>
-  <meta name="description" content="N-picture - 写真をクラウドに保存し、どこでも閲覧・共有できる新しい体験を提供するiPhoneアプリ。" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="N-picture | 公式サイト" />
-  <meta property="og:description" content="写真をクラウドに保存し、どこでも閲覧・共有できる新しい体験を提供。" />
-  <meta property="og:image" content="d95a06c6-9008-4b71-93b9-029d368dbf80.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <link rel="icon" href="d95a06c6-9008-4b71-93b9-029d368dbf80.png">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>1日5分を短縮 — 年間1,250分の生産性アップ | N-Productivity Apps</title>
+  <meta name="description" content="“1日5分を短縮”シリーズ。フォルダ整理、HEIC→JPEG変換、メール自動転送、リネーム、Web自動入力など。すべて一律 ¥500 / $5。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=BIZ+UDP+Gothic&display=swap" rel="stylesheet">
   <style>
-    :root { --accent:#2563eb; --bg:#0b1020; --text:#0b1020; --muted:#6b7280; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "YuGothic", Meiryo, sans-serif; color: var(--text); }
-    header { position:sticky; top:0; backdrop-filter:saturate(1.2) blur(8px); background-color:rgba(255,255,255,.7); border-bottom:1px solid #eee; z-index:10; }
-    .container { max-width:1080px; margin:0 auto; padding:16px; }
-    .nav { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .brand { display:flex; align-items:center; gap:10px; font-weight:700; }
-    .brand img { width:28px; height:28px; border-radius:6px; }
-    .btn { appearance:none; border:none; padding:12px 18px; border-radius:12px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
-    .btn.outline { background:#fff; color:var(--accent); border:2px solid var(--accent); }
-    .hero { background: linear-gradient(180deg, #eef2ff 0%, #fff 100%); padding:72px 16px 48px; }
-    .hero-inner { max-width:1080px; margin:0 auto; display:grid; gap:28px; grid-template-columns: 1.1fr 0.9fr; align-items:center; }
-    @media (max-width:900px){ .hero-inner{ grid-template-columns:1fr; } }
-    .badge { display:inline-block; background:#e0e7ff; color:#3730a3; padding:6px 10px; border-radius:999px; font-weight:700; font-size:12px; letter-spacing:.02em; }
-    h1 { font-size: clamp(28px, 4vw, 44px); line-height:1.15; margin:10px 0; }
-    p.lead { font-size: clamp(16px, 2.2vw, 20px); color:#374151; }
-    .hero-cta { display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; }
-    .mock { background:#0b1020; border-radius:20px; aspect-ratio: 10 / 13; display:grid; place-items:center; color:#cbd5e1; box-shadow:0 30px 40px rgba(0,0,0,.12), 0 6px 18px rgba(0,0,0,.1) inset; }
-    .mock img { max-width:100%; border-radius:12px; }
-    .section { padding:48px 16px; }
-    .grid { display:grid; gap:16px; grid-template-columns: repeat(3, 1fr); }
-    @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
-    .card { border:1px solid #eee; border-radius:16px; padding:18px; background:#fff; box-shadow:0 8px 18px rgba(0,0,0,.05); }
-    .card h3 { margin:6px 0 8px; font-size:18px; }
-    .muted { color: var(--muted); }
-    footer { border-top:1px solid #eee; background:#fafafa; padding:24px 16px; font-size:14px; color:#6b7280; }
-    .store-badges { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .store-badge { height:44px; border:1px solid #e5e7eb; border-radius:10px; padding:6px 10px; display:flex; align-items:center; gap:8px; font-weight:700; text-decoration:none; color:#111; background:#fff; }
-    .store-badge span { font-size:12px; }
-    .kicker { font-size:12px; letter-spacing:.08em; color:#6b7280; text-transform:uppercase; }
-    .cta-bar { background:linear-gradient(90deg, #1d4ed8, #3b82f6); color:#fff; border-radius:16px; padding:20px; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
-    .cta-bar .btn { background:#fff; color:#1d4ed8; }
+    :root{
+      --bg:#f7f9fc; --panel:#fff; --text:#10131a; --muted:#5c6f82;
+      --brand:#2b7cff; --ring:rgba(43,124,255,.25);
+      --shadow:0 16px 36px rgba(0,0,0,.08); --radius:18px; --maxw:1160px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:var(--bg);color:var(--text);
+      font:16px/1.6 'BIZ UDP Gothic',system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif
+    }
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px}
+
+    /* Header */
+    header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #e0e6f1;backdrop-filter:saturate(180%) blur(8px)}
+    .nav{height:64px;display:flex;align-items:center;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:800}
+    .brand-icon{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:var(--brand);color:#fff;font-weight:900}
+    .ghost{opacity:.75}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;gap:.6em;padding:.85em 1.15em;border-radius:14px;
+      background:var(--brand);color:#fff;border:1px solid var(--brand);box-shadow:var(--shadow);font-weight:700;transition:.12s}
+    .btn:hover{opacity:.88}
+    .btn.secondary{background:transparent;color:var(--brand);border:1px solid var(--brand)}
+    .btn.ghost{background:transparent;border:1px solid #e3eaf7;color:var(--text)}
+
+    /* Hero */
+    .hero{padding:72px 0 40px;background:
+      radial-gradient(1200px 560px at 90% -20%,rgba(136,201,255,.18),transparent 60%),
+      radial-gradient(900px 520px at 0% 0%,rgba(43,124,255,.12),transparent 60%)}
+    h1{font-size:clamp(30px,5vw,52px);line-height:1.15;margin:.3em 0}
+    .lead{font-size:clamp(16px,2.2vw,20px);color:var(--muted)}
+    .badge{display:inline-flex;gap:.4em;align-items:center;padding:.34em .75em;border-radius:999px;color:#fff;background:var(--brand);font-weight:700}
+    .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
+
+    /* Sections */
+    section{padding:54px 0}
+
+    /* Grid / Cards */
+    .grid{display:grid;gap:18px;grid-template-columns:repeat(3,1fr)}
+    @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width:640px){.grid{grid-template-columns:1fr}}
+    .card{position:relative;background:#fff;border-radius:18px;padding:20px 18px 18px;border:1px solid #e6ecf7;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+    .chip{display:inline-flex;gap:.35em;align-items:center;border-radius:999px;background:rgba(43,124,255,.08);border:1px solid var(--ring);color:var(--brand);font-weight:700;font-size:.85rem;padding:.25em .6em}
+    .list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;color:var(--muted)}
+    .price-tag{position:absolute;top:12px;right:12px;border-radius:10px;padding:.25em .6em;background:#0f1b3d;color:#fff;font-weight:800;font-size:.85rem;letter-spacing:.02em}
+    .price-tag small{opacity:.8;font-weight:700;margin-left:.25em}
+
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px}
+    .kpi{padding:12px;border-radius:14px;background:#fff;border:1px solid #e6ecf7;text-align:center}
+    .kpi .n{font-weight:900}
+
+    .note{border-left:4px solid var(--brand);padding-left:10px;margin-top:10px}
+
+    /* Footer */
+    footer{padding:34px 0 60px;color:var(--muted);font-size:.95rem;border-top:1px solid #e0e6f1}
+    .foot{display:grid;grid-template-columns:2fr 1fr 1fr;gap:18px}
+    @media (max-width:920px){.foot{grid-template-columns:1fr}}
+    .tiny{font-size:.88rem}
   </style>
 </head>
 <body>
-  <header>
-    <div class="container nav">
-      <div class="brand"><img src="d95a06c6-9008-4b71-93b9-029d368dbf80.png" alt="N-picture ロゴ">N-picture</div>
-      <nav>
-        <a class="btn outline" href="#features">機能</a>
-        <a class="btn outline" href="#download">ダウンロード</a>
-        <a class="btn" href="#contact">お問い合わせ</a>
-      </nav>
-    </div>
-  </header>
+<header>
+  <div class="wrap nav">
+    <div class="brand"><div class="brand-icon">N</div><span>N-Productivity</span></div>
+    <nav>
+      <a href="#apps" class="ghost">アプリ一覧</a>&nbsp;&nbsp;
+      <a href="#why" class="ghost">選ばれる理由</a>&nbsp;&nbsp;
+      <a href="#faq" class="ghost">FAQ</a>&nbsp;&nbsp;
+      <a class="btn" href="#apps">ダウンロード</a>
+    </nav>
+  </div>
+</header>
 
+<main>
+  <!-- Hero -->
   <section class="hero">
-    <div class="hero-inner">
-      <div>
-        <span class="badge">New</span>
-        <h1>写真をもっと自由に <br> クラウドでシンプル管理</h1>
-        <p class="lead">N-pictureは、撮った写真を自動でクラウド保存し、どこでも簡単に閲覧・共有できる新しい写真体験を提供します。</p>
-        <div class="hero-cta">
-          <a class="btn" href="#download">今すぐ入手</a>
-          <a class="btn outline" href="#features">機能を見る</a>
-        </div>
-        <p class="muted" style="margin-top:8px;">※ App Store リンクはこのページ下部の「ダウンロード」から。</p>
+    <div class="wrap">
+      <span class="badge">1日5分を短縮 → 年間1,250分</span>
+      <h1>“1日5分を短縮” シリーズ。<br>小さな自動化で、大きな余白を。</h1>
+      <p class="lead">
+        毎日のちょっと面倒をアプリで解決。<strong>すべて一律 ¥500 / $5</strong>。必要なものだけ選んで導入できます。
+      </p>
+      <div class="kpis">
+        <div class="kpi"><div class="n">Windows / macOS</div><div class="tiny">両対応</div></div>
+        <div class="kpi"><div class="n">軽量ネイティブ</div><div class="tiny">サクサク起動</div></div>
+        <div class="kpi"><div class="n">ログ保存</div><div class="tiny">再現性と安心</div></div>
       </div>
-      <div class="mock">
-        <img src="d95a06c6-9008-4b71-93b9-029d368dbf80.png" alt="アプリアイコン">
-      </div>
-    </div>
-  </section>
-
-  <section id="features" class="section">
-    <div class="container">
-      <h2>主な機能</h2>
-      <div class="grid" style="margin-top:12px;">
-        <div class="card">
-          <h3>クラウド保存</h3>
-          <p class="muted">撮った写真は自動でクラウドに保存。端末容量を気にせず安心。</p>
-        </div>
-        <div class="card">
-          <h3>共有機能</h3>
-          <p class="muted">家族やチームと簡単共有。アルバムを一緒に楽しめます。</p>
-        </div>
-        <div class="card">
-          <h3>どこでもアクセス</h3>
-          <p class="muted">iPhone・iPad・Macから、いつでもどこでも閲覧可能。</p>
-        </div>
+      <div class="cta">
+        <a class="btn" href="#apps">アプリを見る</a>
+        <a class="btn secondary" href="#faq">よくある質問</a>
       </div>
     </div>
   </section>
 
-  <section id="download" class="section">
-    <div class="container">
-      <div class="cta-bar">
-        <div>
-          <div class="kicker">DOWNLOAD</div>
-          <h3 style="margin:4px 0 0">N-pictureを手に入れよう</h3>
-          <p style="margin:6px 0 0; opacity:.9">iOS（iPhone / iPad）向け</p>
-        </div>
-        <div class="store-badges">
-          <!-- App Store の実URLに置き換えてください -->
-          <a class="store-badge" href="https://apps.apple.com/app/idXXXXXXXXX" target="_blank" rel="noopener">
-            <strong>App Store</strong><span>で入手</span>
-          </a>
-        </div>
+  <!-- Why -->
+  <section id="why">
+    <div class="wrap">
+      <h2>選ばれる理由</h2>
+      <div class="grid" style="margin-top:12px">
+        <article class="card">
+          <h3>クリックレス自動化</h3>
+          <p class="ghost">収録＆再生、待機や条件分岐にも対応。失敗しても自動リトライ。</p>
+        </article>
+        <article class="card">
+          <h3>スマート整理</h3>
+          <p class="ghost">拡張子/撮影日/規則で自動分類。差分のみ処理で二重作業ゼロ。</p>
+        </article>
+        <article class="card">
+          <h3>入力の自動化</h3>
+          <p class="ghost">メール/画像/OCR/表計算から値を抽出し、WebやExcelへ転記。</p>
+        </article>
       </div>
     </div>
   </section>
 
-  <section id="contact" class="section">
-    <div class="container">
-      <h2>お問い合わせ</h2>
-      <p class="muted">メール： <a href="mailto:nnnkeita@shimz.co.jp">nnnkeita@shimz.co.jp</a></p>
-      <p class="muted">フォーム利用は <a href="https://formspree.io/" target="_blank" rel="noopener">Formspree</a> 等も可（無料枠あり）</p>
-      <p class="muted"><a href="./privacy.html">プライバシーポリシー</a> ｜ <a href="./terms.html">利用規約</a></p>
+  <!-- Apps -->
+  <section id="apps">
+    <div class="wrap">
+      <h2>アプリ一覧（すべて一律 <span style="color:#2b7cff;font-weight:900">¥500</span> / <span style="color:#2b7cff;font-weight:900">$5</span>）</h2>
+      <p class="tiny" style="margin:.4em 0 1em;color:#5c6f82">※ 税込 / 海外決済は $5 のフラットプライス。</p>
+
+      <div class="grid">
+        <!-- 1) フォルダ整理：index2へ遷移 -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>フォルダ整理オーガナイザー</h3>
+          <ul class="list">
+            <li>拡張子・撮影日・規則で自動分類</li>
+            <li>月別ディレクトリ＆重複回避</li>
+            <li>差分のみ処理で安全</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="./index2.html" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="./index2.html" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+
+        <!-- 2) HEIC→JPEG -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>HEIC → JPEG 変換ツール</h3>
+          <ul class="list">
+            <li>必要時のみ変換（元画質キープ）</li>
+            <li>撮影日で自動リネーム・整理</li>
+            <li>フォルダ一括ドラッグ＆ドロップ</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="#" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="#" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+
+        <!-- 3) セキュリティーメール転送 -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>ワンタイム/セキュリティーメール自動転送</h3>
+          <ul class="list">
+            <li>件名/送信元でフィルタ → 安全転送</li>
+            <li>直近N分のみ対象・誤送防止ログ</li>
+            <li>社内向けテンプレ付き</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="#" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="#" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+
+        <!-- 4) 自動リネーム -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>スマート自動リネーム</h3>
+          <ul class="list">
+            <li>OCR/日付/規則でわかる名前に</li>
+            <li>図面/帳票を自動判別（軽量AI）</li>
+            <li>復元ログでやり直しOK</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="#" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="#" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+
+        <!-- 5) Webフォーム自動入力 -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>Webフォーム自動入力</h3>
+          <ul class="list">
+            <li>テンプレから一発入力</li>
+            <li>待機/リトライ/条件分岐に対応</li>
+            <li>入力ログで再現性担保</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="#" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="#" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+
+        <!-- 6) 画像・スクショ仕分け -->
+        <article class="card">
+          <span class="price-tag">¥500 <small>/ $5</small></span>
+          <div class="chip">#1日5分</div>
+          <h3>画像・スクショ自動仕分け</h3>
+          <ul class="list">
+            <li>拡張子/解像度/縦横で分類</li>
+            <li>週次・月次の台帳へ出力</li>
+            <li>ダブり検知で削除候補提案</li>
+          </ul>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <a class="btn" href="#" title="ダウンロード">ダウンロード</a>
+            <a class="btn ghost" href="#" title="詳しい説明">詳しく</a>
+          </div>
+        </article>
+      </div>
+
+      <p class="note tiny">※ すべてローカル実行。機密データは外部送信しません（設定で通信遮断可）。</p>
     </div>
   </section>
 
-  <footer>
-    <div class="container">© <span id="y"></span> N-picture. All rights reserved.</div>
-  </footer>
+  <!-- Testimonials -->
+  <section>
+    <div class="wrap">
+      <h2>導入効果</h2>
+      <div class="grid" style="margin-top:12px">
+        <div class="card"><p>「資料整理・命名・転記がボトルネックでしたが、<strong>1日5〜10分短縮</strong>が安定」</p><p class="tiny ghost">建設業 / 工事管理</p></div>
+        <div class="card"><p>「ログが明快で<strong>再現と改善が速い</strong>。属人作業が標準化」</p><p class="tiny ghost">製造業 / 品質管理</p></div>
+        <div class="card"><p>「テンプレ配布で<strong>新人の立ち上がり短縮</strong>」</p><p class="tiny ghost">プロジェクト管理</p></div>
+      </div>
+    </div>
+  </section>
 
-  <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="wrap">
+      <h2>FAQ</h2>
+      <details class="card"><summary>なぜ「1日5分」？</summary><p>5分/日 × 250営業日 = 1,250分（約21時間）。小さな自動化を積み上げると、確かな余白になります。</p></details>
+      <details class="card"><summary>価格は本当に一律？</summary><p>はい、すべての単体アプリは <strong>¥500 / $5</strong> のフラット価格です。</p></details>
+      <details class="card"><summary>社内セキュリティは？</summary><p>ローカル実行で機密データは外部送信しません（設定で通信遮断可）。ログは端末内に保存。</p></details>
+      <details class="card"><summary>サポートは？</summary><p>メールでの通常サポートを提供します。法人向けは優先対応・配布ポリシー設定も可（別料金）。</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <div class="brand"><div class="brand-icon">N</div><span>N-Productivity</span></div>
+      <p class="tiny">“1日5分を短縮”で、年間1,250分の余白を。</p>
+    </div>
+    <div>
+      <strong class="ghost">メニュー</strong><br>
+      <a class="ghost" href="#apps">アプリ一覧</a><br>
+      <a class="ghost" href="#why">選ばれる理由</a><br>
+      <a class="ghost" href="#faq">FAQ</a>
+    </div>
+    <div>
+      <strong class="ghost">ポリシー</strong><br>
+      <a class="ghost" href="privacy.html">Privacy</a><br>
+      <a class="ghost" href="terms.html">Terms</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // セクション内スムーススクロール
+  document.querySelectorAll('a[href^="#"]').forEach(a=>{
+    a.addEventListener('click', e=>{
+      const id=a.getAttribute('href').slice(1), el=document.getElementById(id);
+      if(el){ e.preventDefault(); el.scrollIntoView({behavior:'smooth'}); history.pushState(null,'','#'+id); }
+    });
+  });
+</script>
 </body>
 </html>
