@@ -10,7 +10,9 @@
         .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3498db; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .nav-child { margin-left: 20px; border-left: 1px solid #e5e7eb; }
+        .page-item { user-select: none; }
         .page-item:hover { background-color: #f3f4f6; }
+        .page-item[draggable="true"] { cursor: move; }
         .active-page { background-color: #e5e7eb; font-weight: 500; }
         #context-menu { position: absolute; z-index: 50; display: none; background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-radius: 6px; min-width: 160px; }
         .menu-item { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; font-size: 14px; color: #374151; }
@@ -449,6 +451,8 @@
                 const wrapper = document.createElement('div');
                 const row = document.createElement('div');
                 row.className = `page-item px-3 py-1 text-sm text-gray-600 rounded cursor-pointer flex items-center group ${currentPageId === page.id ? 'active-page' : ''}`;
+                row.draggable = true;
+                row.dataset.pageId = page.id;
                 
                 // フォルダかどうかを判定（子要素がある = フォルダ）
                 const isFolder = page.children && page.children.length > 0;
@@ -462,6 +466,38 @@
                 
                 row.onclick = (e) => { e.stopPropagation(); loadPage(page.id); };
                 row.oncontextmenu = (e) => handleSidebarRightClick(e, page.id);
+                
+                // ドラッグイベント
+                row.ondragstart = (e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', page.id);
+                };
+                
+                row.ondragover = (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    row.classList.add('bg-blue-100');
+                };
+                
+                row.ondragleave = (e) => {
+                    row.classList.remove('bg-blue-100');
+                };
+                
+                row.ondrop = async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    row.classList.remove('bg-blue-100');
+                    const draggedPageId = parseInt(e.dataTransfer.getData('text/plain'));
+                    if (draggedPageId !== page.id && isFolder) {
+                        // ドラッグされたページをこのフォルダに移動
+                        await fetch(`/api/pages/${draggedPageId}`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ parent_id: page.id })
+                        });
+                        fetchPages();
+                    }
+                };
 
                 row.innerHTML = `
                     ${toggleBtn}
