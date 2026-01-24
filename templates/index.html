@@ -22,6 +22,13 @@
         .add-cover-btn { opacity: 0; transition: opacity 0.2s; }
         .cover-image-container:hover .add-cover-btn, .group:hover .add-cover-btn { opacity: 1; }
         
+        /* Textarea自動拡張 */
+        .block-textarea {
+            resize: none;
+            overflow: hidden;
+            min-height: 1.5em;
+        }
+        
         /* PC用（768px以上） */
         body { 
             display: flex;
@@ -99,7 +106,7 @@
         }
     </style>
 </head>
-<body class="bg-white text-gray-800" onclick="hideContextMenu()">
+<body class="bg-green-50 text-gray-800" onclick="hideContextMenu()">
 
     <div class="w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-full flex-shrink-0" id="sidebar">
         <div class="p-4 flex justify-between items-center">
@@ -143,7 +150,7 @@
             <span id="save-status" class="text-xs text-gray-400">保存済み</span>
         </div>
 
-        <div class="flex-1 overflow-y-auto" id="editor-container">
+        <div class="flex-1 overflow-y-auto bg-green-50" id="editor-container">
             <div id="cover-image" class="cover-image-container group">
                 <div class="absolute bottom-2 right-2 add-cover-btn">
                     <button onclick="triggerCoverUpload()" class="bg-white/80 hover:bg-white text-xs px-2 py-1 rounded shadow text-gray-600">画像を変更</button>
@@ -310,6 +317,12 @@
             }
         }
 
+        // Textarea自動リサイズ
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.max(textarea.scrollHeight, 24) + 'px';
+        }
+
         async function fetchPages() {
             const res = await fetch('/api/pages');
             const rootPages = await res.json();
@@ -386,11 +399,18 @@
                         <input class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">
                     `;
                 } else {
-                    contentHtml = `<input class="w-full border-none focus:ring-0 bg-transparent" value="${block.content}" placeholder="テキストを入力..." oninput="updateBlock(${block.id}, 'content', this.value)">`;
+                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
+                    contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea" placeholder="テキストを入力..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
                 }
                 const deleteBtn = `<button onclick="deleteBlock(${block.id})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 p-1">×</button>`;
                 div.innerHTML = handle + contentHtml + deleteBtn;
                 container.appendChild(div);
+                
+                // Textareaをレンダリング後に自動リサイズ
+                const textarea = div.querySelector('textarea');
+                if(textarea) {
+                    autoResizeTextarea(textarea);
+                }
             });
 
             if(sortableInstance) sortableInstance.destroy();
