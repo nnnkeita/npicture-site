@@ -24,6 +24,27 @@
         .drag-handle { cursor: grab; color: #d1d5db; display: flex; align-items: center; justify-content: center; width: 20px; opacity: 0; }
         .block-row:hover .drag-handle { opacity: 1; }
         .cover-image-container { height: 20vh; min-height: 150px; background-color: #f9fafb; position: relative; display: none; background-size: cover; background-position: center; }
+
+        /* --- Dark Mode Overrides --- */
+        html.dark body { background-color: #0f172a; color: #e5e7eb; }
+        html.dark #sidebar { background-color: #0b1220; border-color: #374151; }
+        html.dark #main-container { background-color: #0f172a; }
+        html.dark .page-item:hover { background-color: #1f2937; }
+        html.dark .active-page { background-color: #374151; }
+        html.dark #context-menu { background: #111827; border-color: #374151; }
+        html.dark .menu-item { color: #d1d5db; }
+        html.dark .menu-item:hover { background-color: #1f2937; }
+        html.dark .cover-image-container { background-color: #0b1220; }
+        html.dark .border-gray-200 { border-color: #374151 !important; }
+        html.dark .bg-white { background-color: #111827 !important; }
+        html.dark .bg-gray-50 { background-color: #0b1220 !important; }
+        html.dark .text-gray-800 { color: #e5e7eb !important; }
+        html.dark .text-gray-700 { color: #e5e7eb !important; }
+        html.dark .text-gray-600 { color: #d1d5db !important; }
+        html.dark .text-gray-500 { color: #cbd5e1 !important; }
+        html.dark .text-gray-400 { color: #9ca3af !important; }
+        html.dark input, html.dark textarea { color: #e5e7eb; background-color: transparent; }
+        html.dark ::placeholder { color: #9ca3af; }
         .cover-image-container.has-image { display: block; }
         .add-cover-btn { opacity: 0; transition: opacity 0.2s; }
         .cover-image-container:hover .add-cover-btn, .group:hover .add-cover-btn { opacity: 1; }
@@ -172,6 +193,7 @@
             <div class="flex items-center text-sm text-gray-600 flex-1">
                 <span id="breadcrumb" class="flex items-center gap-1"></span>
             </div>
+            <button id="theme-toggle" onclick="toggleTheme()" class="text-gray-600 text-sm px-2 py-1 rounded hover:bg-gray-100">🌙</button>
             <span id="save-status" class="text-xs text-gray-400">保存済み</span>
         </div>
 
@@ -310,12 +332,37 @@
             document.getElementById('block-type-menu').classList.add('hidden');
         }
 
+        // テーマ適用
+        function applyThemeFromStorage() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+            updateThemeToggleIcon();
+        }
+
+        function updateThemeToggleIcon() {
+            const btn = document.getElementById('theme-toggle');
+            if (!btn) return;
+            btn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+        }
+
+        function toggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            updateThemeToggleIcon();
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             // ローカルストレージから折りたたみ状態を復元
             const saved = localStorage.getItem('collapsedFolders');
             if (saved) {
                 collapsedFolders = new Set(JSON.parse(saved));
             }
+            // テーマ適用
+            applyThemeFromStorage();
             fetchPages();
             renderCalendar();
         });
