@@ -2,11 +2,12 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Notion Clone Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
+        body { font-size: 16px; } /* iPhoneのズーム防止 */
         .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3498db; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .nav-child { margin-left: 20px; border-left: 1px solid #e5e7eb; }
@@ -25,11 +26,26 @@
         .calendar-cell { text-align: center; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 0.8rem; }
         .calendar-cell:hover { background-color: #f3f4f6; }
         .calendar-today { color: #2563eb; font-weight: bold; }
+        
+        /* レスポンシブ対応 */
+        #sidebar-toggle { display: none; }
+        #sidebar { position: relative; }
+        #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+        
+        @media (max-width: 768px) {
+            #sidebar-toggle { display: block; }
+            body { flex-direction: column; }
+            #sidebar { position: fixed; left: 0; top: 0; width: 80vw; max-width: 300px; height: 100vh; z-index: 50; transform: translateX(-100%); transition: transform 0.3s; }
+            #sidebar.active { transform: translateX(0); }
+            #sidebar-overlay.active { display: block; }
+            #editor-container { width: 100%; }
+            .max-w-3xl { padding-left: 1rem !important; padding-right: 1rem !important; }
+        }
     </style>
 </head>
 <body class="bg-white text-gray-800 flex h-screen overflow-hidden" onclick="hideContextMenu()">
 
-    <div class="w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-full flex-shrink-0" id="sidebar">
+    <div class="hidden fixed md:static w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-full flex-shrink-0" id="sidebar">
         <div class="p-4 flex justify-between items-center">
             <h1 class="font-bold text-gray-600 truncate">プライベート日記</h1>
             <button onclick="openSearch()" class="text-gray-400 hover:text-gray-600" title="検索">🔍</button>
@@ -60,12 +76,15 @@
         </div>
     </div>
 
+    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
     <div class="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div class="h-10 border-b border-gray-200 flex items-center px-4 justify-between bg-white z-10 shrink-0">
-            <div class="flex items-center text-sm text-gray-600">
-                <span id="breadcrumb" class="flex items-center gap-1"></span>
+        <div class="h-12 md:h-10 border-b border-gray-200 flex items-center px-3 md:px-4 justify-between bg-white z-10 shrink-0 gap-2">
+            <button id="sidebar-toggle" onclick="toggleSidebar()" class="md:hidden text-gray-600 text-xl p-2">☰</button>
+            <div class="flex items-center text-sm text-gray-600 flex-1 min-w-0">
+                <span id="breadcrumb" class="flex items-center gap-1 truncate"></span>
             </div>
-            <span id="save-status" class="text-xs text-gray-400">保存済み</span>
+            <span id="save-status" class="text-xs text-gray-400 whitespace-nowrap">保存済み</span>
         </div>
 
         <div class="flex-1 overflow-y-auto" id="editor-container">
@@ -76,15 +95,15 @@
                 </div>
             </div>
 
-            <div class="max-w-3xl mx-auto p-12 pb-32">
+            <div class="max-w-3xl mx-auto p-6 md:p-12 pb-32">
                 <div class="group relative mb-4 flex items-end gap-4">
-                    <div class="w-16 h-16 flex items-center justify-center text-5xl cursor-pointer hover:bg-gray-100 rounded transition" onclick="updateIcon()">
+                    <div class="w-12 md:w-16 h-12 md:h-16 flex items-center justify-center text-4xl md:text-5xl cursor-pointer hover:bg-gray-100 rounded transition" onclick="updateIcon()">
                         <span id="page-icon">📄</span>
                     </div>
                     <button id="add-cover-trigger" onclick="triggerCoverUpload()" class="mb-2 text-sm text-gray-400 hover:text-gray-600 add-cover-btn hidden">🖼️ カバーを追加</button>
                 </div>
                 
-                <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-8 bg-transparent" placeholder="無題" oninput="saveTitle()">
+                <input type="text" id="page-title" class="text-3xl md:text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-8 bg-transparent" placeholder="無題" oninput="saveTitle()">
                 
                 <div id="blocks" class="space-y-1 pb-10"></div>
                 
@@ -119,6 +138,20 @@
         let typingTimer;
         let contextTargetId = null;
         let sortableInstance = null;
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        }
         let currentCalendarDate = new Date(); // カレンダー表示用
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -256,6 +289,7 @@
 
         async function loadPage(id) {
             currentPageId = id;
+            closeSidebar(); // モバイルではサイドバーを閉じる
             fetchPages();
             const res = await fetch(`/api/pages/${id}`);
             const page = await res.json();
