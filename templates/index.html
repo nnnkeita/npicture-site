@@ -149,6 +149,9 @@
             <button onclick="createFolder()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">📁</span> フォルダを追加
             </button>
+            <button onclick="showTemplateMenu()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">⭐</span> テンプレート
+            </button>
             <button onclick="showTrash()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">🗑️</span> ゴミ箱
             </button>
@@ -229,6 +232,29 @@
             <div class="p-4 border-t border-gray-200 flex justify-end gap-2">
                 <button onclick="emptyTrash()" class="px-4 py-2 text-sm text-white bg-red-500 hover:bg-red-600 rounded">すべて削除</button>
                 <button onclick="closeTrash()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="template-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeTemplateMenu(event)">
+        <div class="bg-white w-full max-w-md rounded-lg shadow-xl overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-800">⭐ テンプレートを選択</h2>
+                <button onclick="closeTemplateMenu()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div class="p-4 space-y-2">
+                <button onclick="createFromTemplate('daily')" class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-semibold text-gray-700">
+                    📝 今日の記録
+                </button>
+                <button onclick="createFromTemplate('reading')" class="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded border border-green-200 font-semibold text-gray-700">
+                    📚 読書メモ
+                </button>
+                <button onclick="createFromTemplate('meeting')" class="w-full text-left px-4 py-3 bg-orange-50 hover:bg-orange-100 rounded border border-orange-200 font-semibold text-gray-700">
+                    💼 会議メモ
+                </button>
+                <button onclick="createFromTemplate('english')" class="w-full text-left px-4 py-3 bg-purple-50 hover:bg-purple-100 rounded border border-purple-200 font-semibold text-gray-700">
+                    🌍 英語進捗
+                </button>
             </div>
         </div>
     </div>
@@ -706,6 +732,29 @@
                 showTrash();
                 fetchPages();
             }
+        }
+
+        // --- テンプレート機能 ---
+        function showTemplateMenu() {
+            document.getElementById('template-modal').classList.remove('hidden');
+        }
+
+        function closeTemplateMenu(e) {
+            if (!e || e.target.id === 'template-modal') {
+                document.getElementById('template-modal').classList.add('hidden');
+            }
+        }
+
+        async function createFromTemplate(templateType) {
+            const res = await fetch('/api/pages/from-template', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ template: templateType })
+            });
+            const page = await res.json();
+            closeTemplateMenu();
+            await fetchPages();
+            loadPage(page.id);
         }
     </script>
 </body>

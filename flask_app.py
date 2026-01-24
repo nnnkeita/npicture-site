@@ -267,6 +267,22 @@ def create_page_from_template():
                 {'type': 'h1', 'content': '決定事項'},
                 {'type': 'todo', 'content': ''},
             ]
+        },
+        'english': {
+            'title': f'{datetime.now().strftime("%Y年%m月%d日")}の英語進捗',
+            'icon': '🌍',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の学習内容'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '新しい単語'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '発音練習'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'リスニング時間'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '気づいたこと'},
+                {'type': 'text', 'content': ''},
+            ]
         }
     }
     
