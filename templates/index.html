@@ -380,6 +380,12 @@
             textarea.style.height = Math.max(textarea.scrollHeight, 24) + 'px';
         }
 
+        // トグルの開閉状態を保存
+        function handleToggleChange(detailsElement, blockId) {
+            const isOpen = detailsElement.open;
+            updateBlock(blockId, 'collapsed', !isOpen);
+        }
+
         async function fetchPages() {
             const res = await fetch('/api/pages');
             const rootPages = await res.json();
@@ -456,16 +462,16 @@
                         <input class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">
                     `;
                 } else if (block.type === 'toggle') {
-                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
-                    const isCollapsed = block.collapsed ? 1 : 0;
+                    const escapedTitle = (block.content || '').replace(/"/g, '&quot;');
+                    const escapedDetails = (block.details || '').replace(/"/g, '&quot;');
                     contentHtml = `
-                        <details ${block.collapsed ? '' : 'open'} class="w-full">
-                            <summary class="cursor-pointer font-semibold list-none flex items-center gap-2 select-none">
+                        <details ${block.collapsed ? '' : 'open'} class="w-full" onchange="handleToggleChange(this, ${block.id})">
+                            <summary class="cursor-pointer font-semibold list-none flex items-center gap-2 select-none hover:bg-gray-50 rounded p-1">
                                 <span>▶</span>
-                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedContent}" placeholder="トグルタイトル..." oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()">
+                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedTitle}" placeholder="トグルタイトル..." oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()" />
                             </summary>
                             <div class="ml-6 mt-2 pl-2 border-l-2 border-gray-200">
-                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." oninput="autoResizeTextarea(this); updateBlock(${block.id}, 'collapsed', !document.querySelector('details').open)">${escapedContent}</textarea>
+                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." oninput="updateBlock(${block.id}, 'details', this.value); autoResizeTextarea(this)">${escapedDetails}</textarea>
                             </div>
                         </details>
                     `;

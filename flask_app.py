@@ -66,6 +66,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     
+    # トグルブロック用の詳細内容カラム
+    try:
+        cursor.execute("ALTER TABLE blocks ADD COLUMN details TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
