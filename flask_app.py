@@ -155,6 +155,37 @@ def create_page():
     conn.close()
     return jsonify(page)
 
+@app.route('/api/pages/from-date', methods=['POST'])
+def create_page_from_date():
+    data = request.json
+    date_str = data.get('date')  # フォーマット: YYYY-MM-DD
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 日付でページを作成（タイトルは日付）
+    cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+    max_pos = cursor.fetchone()[0]
+    new_pos = (max_pos if max_pos is not None else -1) + 1
+    
+    # 日付のフォーマットを「2026年1月24日」に変換
+    from datetime import datetime
+    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+    formatted_date = date_obj.strftime('%Y年%m月%d日')
+    
+    cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                   (formatted_date, '📅', None, new_pos))
+    page_id = cursor.lastrowid
+    
+    # 初期ブロック
+    cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', 0)", (page_id,))
+    
+    conn.commit()
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(page)
+
 @app.route('/api/folders', methods=['POST'])
 def create_folder():
     data = request.json

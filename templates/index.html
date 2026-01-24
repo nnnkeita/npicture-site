@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notion Clone Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3498db; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .nav-child { margin-left: 20px; border-left: 1px solid #e5e7eb; }
+        .page-item:hover { background-color: #f3f4f6; }
+        .active-page { background-color: #e5e7eb; font-weight: 500; }
+        
+        /* コンテキストメニュー */
+        #context-menu { position: absolute; z-index: 50; display: none; background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-radius: 6px; min-width: 160px; }
+        .menu-item { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; font-size: 14px; color: #374151; }
+        .menu-item:hover { background-color: #f3f4f6; }
+
+        /* ドラッグハンドル */
+        .drag-handle { cursor: grab; color: #d1d5db; display: flex; align-items: center; justify-content: center; width: 20px; opacity: 0; }
+        .block-row:hover .drag-handle { opacity: 1; }
+        
+        /* カバー画像 */
+        .cover-image-container { height: 20vh; min-height: 150px; background-color: #f9fafb; position: relative; display: none; background-size: cover; background-position: center; }
+        .cover-image-container.has-image { display: block; }
+        .add-cover-btn { opacity: 0; transition: opacity 0.2s; }
+        .cover-image-container:hover .add-cover-btn, .group:hover .add-cover-btn { opacity: 1; }
+    </style>
+</head>
+<body class="bg-white text-gray-800 flex h-screen overflow-hidden" onclick="hideContextMenu()">
+
+    <div class="w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-full flex-shrink-0" id="sidebar">
+        <div class="p-4 flex justify-between items-center">
+            <h1 class="font-bold text-gray-600 truncate">プライベート日記</h1>
+            <button onclick="openSearch()" class="text-gray-400 hover:text-gray-600" title="検索">🔍</button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="page-list" oncontextmenu="handleSidebarRightClick(event, null)">
+            </div>
+
+        <div class="border-t border-gray-200 p-4">
+            <div class="mb-4">
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">カレンダー</h3>
+                <div class="bg-white rounded-lg shadow-sm p-3">
+                    <div class="text-center">
+                        <div id="calendar-month" class="text-sm font-semibold text-gray-700 mb-2"></div>
+                        <div id="calendar-grid" class="grid grid-cols-7 gap-0.5 text-xs"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-2 border-t border-gray-200">
+            <button onclick="createPage()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">+</span> ページを追加
+            </button>
+            <button onclick="createFolder()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">📁</span> フォルダを追加
+            </button>
+        </div>
+    </div>
+
+    <div class="flex-1 flex flex-col h-full overflow-hidden relative">
+        <div class="h-10 border-b border-gray-200 flex items-center px-4 justify-between bg-white z-10 shrink-0">
+            <div class="flex items-center text-sm text-gray-600">
+                <span id="breadcrumb" class="flex items-center gap-1"></span>
+            </div>
+            <span id="save-status" class="text-xs text-gray-400">保存済み</span>
+        </div>
+
+        <div class="flex-1 overflow-y-auto" id="editor-container">
+            <div id="cover-image" class="cover-image-container group">
+                <div class="absolute bottom-2 right-2 add-cover-btn">
+                    <button onclick="triggerCoverUpload()" class="bg-white/80 hover:bg-white text-xs px-2 py-1 rounded shadow text-gray-600">画像を変更</button>
+                    <button onclick="removeCover()" class="bg-white/80 hover:bg-white text-xs px-2 py-1 rounded shadow text-red-500 ml-1">削除</button>
+                </div>
+            </div>
+
+            <div class="max-w-3xl mx-auto p-12 pb-32">
+                <div class="group relative mb-4 flex items-end gap-4">
+                    <div class="w-16 h-16 flex items-center justify-center text-5xl cursor-pointer hover:bg-gray-100 rounded transition" onclick="updateIcon()">
+                        <span id="page-icon">📄</span>
+                    </div>
+                    <button id="add-cover-trigger" onclick="triggerCoverUpload()" class="mb-2 text-sm text-gray-400 hover:text-gray-600 add-cover-btn hidden">🖼️ カバーを追加</button>
+                </div>
+                
+                <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-8 bg-transparent" placeholder="無題" oninput="saveTitle()">
+                
+                <div id="blocks" class="space-y-1 pb-10"></div>
+                
+                <div class="mt-4 text-gray-300 hover:text-gray-500 cursor-pointer text-sm p-2" onclick="addBlock('text')">
+                    + クリックしてブロックを追加
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="context-menu">
+        <div class="menu-item" onclick="contextAction('delete')">🗑️ 削除</div>
+        <div class="menu-item" onclick="contextAction('rename')">✏️ 名前を変更</div>
+        <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">📄 サブページ作成</div>
+        <div class="menu-item" onclick="contextAction('new_folder')">📁 フォルダ作成</div>
+    </div>
+
+    <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-start justify-center pt-20" onclick="closeSearch(event)">
+        <div class="bg-white w-full max-w-xl rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[60vh]">
+            <div class="p-4 border-b border-gray-200">
+                <input type="text" id="search-input" class="w-full text-lg border-none focus:ring-0" placeholder="検索..." oninput="performSearch()">
+            </div>
+            <div id="search-results" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+        </div>
+    </div>
+
+    <input type="file" id="cover-upload" class="hidden" accept="image/*" onchange="uploadCover(this)">
+    <input type="file" id="block-upload" class="hidden" onchange="uploadBlockFile(this)">
+
+    <script>
+        let currentPageId = null;
+        let typingTimer;
+        let contextTargetId = null; // 右クリックされたページのID
+        let sortableInstance = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchPages();
+            initCalendar();
+        });
+
+        // --- サイドバー & 右クリック ---
+        function handleSidebarRightClick(e, pageId) {
+            e.preventDefault();
+            e.stopPropagation();
+            contextTargetId = pageId;
+            
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = `${e.pageX}px`;
+            menu.style.top = `${e.pageY}px`;
+        }
+
+        function hideContextMenu() {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+
+        async function contextAction(action) {
+            hideContextMenu();
+            if (!contextTargetId && action === 'delete') return;
+
+            if (action === 'delete') {
+                if(confirm('本当に削除しますか？')) {
+                    await fetch(`/api/pages/${contextTargetId}`, { method: 'DELETE' });
+                    if(currentPageId === contextTargetId) {
+                        document.getElementById('editor-container').style.display = 'none';
+                    }
+                    fetchPages();
+                }
+            } else if (action === 'rename') {
+                const newTitle = prompt('新しい名前:');
+                if(newTitle) {
+                    await fetch(`/api/pages/${contextTargetId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ title: newTitle })
+                    });
+                    fetchPages();
+                    if(currentPageId === contextTargetId) document.getElementById('page-title').value = newTitle;
+                }
+            } else if (action === 'new_sub') {
+                createPageIn(contextTargetId);
+            } else if (action === 'new_folder') {
+                createFolder(contextTargetId); // フォルダ内フォルダも可能に
+            }
+        }
+
+        // --- ページ取得・表示 ---
+        async function fetchPages() {
+            const res = await fetch('/api/pages');
+            const rootPages = await res.json();
+            const container = document.getElementById('page-list');
+            container.innerHTML = '';
+            renderTree(rootPages, container);
+        }
+
+        function renderTree(pages, container) {
+            if (!pages || pages.length === 0) return;
+            pages.forEach(page => {
+                const wrapper = document.createElement('div');
+                const row = document.createElement('div');
+                row.className = `page-item px-3 py-1 text-sm text-gray-600 rounded cursor-pointer flex items-center group ${currentPageId === page.id ? 'active-page' : ''}`;
+                row.onclick = (e) => { e.stopPropagation(); loadPage(page.id); };
+                row.oncontextmenu = (e) => handleSidebarRightClick(e, page.id);
+
+                row.innerHTML = `
+                    <span class="mr-2 opacity-70">${page.icon}</span>
+                    <span class="truncate flex-1">${page.title || '無題'}</span>
+                `;
+                wrapper.appendChild(row);
+
+                if (page.children && page.children.length > 0) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'nav-child';
+                    renderTree(page.children, childrenContainer);
+                    wrapper.appendChild(childrenContainer);
+                }
+                container.appendChild(wrapper);
+            });
+        }
+
+        async function loadPage(id) {
+            currentPageId = id;
+            fetchPages(); // highlight active
+            const res = await fetch(`/api/pages/${id}`);
+            const page = await res.json();
+
+            // カバー画像処理
+            const coverDiv = document.getElementById('cover-image');
+            const addCoverBtn = document.getElementById('add-cover-trigger');
+            if (page.cover_image) {
+                coverDiv.style.backgroundImage = `url('${page.cover_image}')`;
+                coverDiv.classList.add('has-image');
+                addCoverBtn.classList.add('hidden');
+            } else {
+                coverDiv.style.backgroundImage = '';
+                coverDiv.classList.remove('has-image');
+                addCoverBtn.classList.remove('hidden');
+            }
+
+            document.getElementById('page-icon').innerText = page.icon;
+            document.getElementById('page-title').value = page.title;
+            renderBlocks(page.blocks);
+        }
+
+        // --- ブロック & ドラッグ＆ドロップ ---
+        function renderBlocks(blocks) {
+            const container = document.getElementById('blocks');
+            container.innerHTML = '';
+            
+            blocks.forEach(block => {
+                const div = document.createElement('div');
+                div.className = 'block-row group flex items-start gap-2 py-1 relative';
+                div.dataset.id = block.id;
+
+                // ドラッグハンドル (左側)
+                const handle = `<div class="drag-handle hover:bg-gray-200 rounded">⋮⋮</div>`;
+                
+                let contentHtml = '';
+                if (block.type === 'h1') {
+                    contentHtml = `<input class="text-3xl font-bold w-full border-none focus:ring-0 bg-transparent" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">`;
+                } else if (block.type === 'image') {
+                    contentHtml = `<img src="${block.content}" class="max-w-full rounded shadow-sm">`;
+                } else if (block.type === 'todo') {
+                    contentHtml = `
+                        <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
+                        <input class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">
+                    `;
+                } else {
+                    contentHtml = `<input class="w-full border-none focus:ring-0 bg-transparent" value="${block.content}" placeholder="テキストを入力..." oninput="updateBlock(${block.id}, 'content', this.value)">`;
+                }
+                
+                // 削除ボタン
+                const deleteBtn = `<button onclick="deleteBlock(${block.id})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 p-1">×</button>`;
+
+                div.innerHTML = handle + contentHtml + deleteBtn;
+                container.appendChild(div);
+            });
+
+            // SortableJS 初期化（ドラッグ＆ドロップ）
+            if(sortableInstance) sortableInstance.destroy();
+            sortableInstance = new Sortable(container, {
+                handle: '.drag-handle',
+                animation: 150,
+                onEnd: async function (evt) {
+                    // 並び替え後の処理：順番をサーバーに送信
+                    const itemEl = evt.item;
+                    const newIndex = evt.newIndex;
+                    const blockId = itemEl.dataset.id;
+                    
+                    // 単純化のため、変更されたブロックの位置だけ更新（厳密には全更新が良いが、簡易版として）
+                    await fetch(`/api/blocks/${blockId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ position: newIndex })
+                    });
+                    // 本当はIDリストを全送りが望ましいが、今回はこれで
+                }
+            });
+        }
+
+        // --- その他機能（作成、更新、アップロード） ---
+        async function createPageIn(parentId) {
+            const res = await fetch('/api/pages', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ parent_id: parentId, title: '無題' })
+            });
+            const page = await res.json();
+            await fetchPages();
+            loadPage(page.id);
+        }
+        
+        async function createPage() { createPageIn(null); }
+        
+        async function createFolder(parentId=null) {
+            const res = await fetch('/api/folders', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ parent_id: parentId })
+            });
+            const folder = await res.json();
+            await fetchPages();
+            loadPage(folder.id);
+        }
+
+        function saveTitle() {
+            clearTimeout(typingTimer);
+            document.getElementById('save-status').innerText = '保存中...';
+            typingTimer = setTimeout(async () => {
+                const title = document.getElementById('page-title').value;
+                await fetch(`/api/pages/${currentPageId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title: title })
+                });
+                document.getElementById('save-status').innerText = '保存済み';
+                fetchPages();
+            }, 500);
+        }
+
+        async function updateIcon() {
+            const newIcon = prompt('アイコンを入力:', document.getElementById('page-icon').innerText);
+            if(newIcon) {
+                document.getElementById('page-icon').innerText = newIcon;
+                await fetch(`/api/pages/${currentPageId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ icon: newIcon })
+                });
+                fetchPages();
+            }
+        }
+
+        // ブロック作成・更新・削除
+        async function addBlock(type) {
+            if (!currentPageId) return;
+            await fetch(`/api/pages/${currentPageId}/blocks`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ type: type })
+            });
+            loadPage(currentPageId);
+        }
+
+        function updateBlock(id, key, value) {
+            clearTimeout(typingTimer);
+            document.getElementById('save-status').innerText = '保存中...';
+            typingTimer = setTimeout(async () => {
+                const body = {}; body[key] = value;
+                await fetch(`/api/blocks/${id}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                document.getElementById('save-status').innerText = '保存済み';
+            }, 500);
+        }
+
+        async function deleteBlock(id) {
+            await fetch(`/api/blocks/${id}`, { method: 'DELETE' });
+            loadPage(currentPageId);
+        }
+
+        // カバー画像関連
+        function triggerCoverUpload() { document.getElementById('cover-upload').click(); }
+        async function uploadCover(input) {
+            if(!input.files[0] || !currentPageId) return;
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            formData.append('page_id', currentPageId);
+            formData.append('is_cover', 'true');
+            
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if(data.success) {
+                loadPage(currentPageId);
+            }
+        }
+        async function removeCover() {
+            if(!currentPageId) return;
+            await fetch(`/api/pages/${currentPageId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ cover_image: '' })
+            });
+            loadPage(currentPageId);
+        }
+
+        // 検索機能
+        function openSearch() {
+            document.getElementById('search-modal').classList.remove('hidden');
+            document.getElementById('search-input').focus();
+        }
+        function closeSearch(e) {
+            if(e.target.id === 'search-modal') {
+                document.getElementById('search-modal').classList.add('hidden');
+            }
+        }
+        async function performSearch() {
+            const query = document.getElementById('search-input').value;
+            if(query.length < 2) {
+                document.getElementById('search-results').innerHTML = '';
+                return;
+            }
+            const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const results = await res.json();
+            const container = document.getElementById('search-results');
+            container.innerHTML = '';
+            
+            if(results.length === 0) {
+                container.innerHTML = '<div class="text-gray-400 text-sm p-2">見つかりませんでした</div>';
+                return;
+            }
+
+            results.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'p-2 hover:bg-gray-100 rounded cursor-pointer';
+                div.onclick = () => {
+                    loadPage(item.page_id);
+                    document.getElementById('search-modal').classList.add('hidden');
+                };
+                div.innerHTML = `
+                    <div class="text-sm font-bold text-gray-700">${item.page_title || '無題'}</div>
+                    <div class="text-xs text-gray-500 truncate">${item.snippet}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+        // ショートカットキー (Ctrl+K or Cmd+K)
+        document.addEventListener('keydown', e => {
+            if((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                openSearch();
+            }
+        });
+
+        // --- カレンダー機能 ---
+        let currentCalendarMonth = new Date();
+
+        function initCalendar() {
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const year = currentCalendarMonth.getFullYear();
+            const month = currentCalendarMonth.getMonth();
+            
+            // 月年表示
+            const monthDisplay = document.getElementById('calendar-month');
+            monthDisplay.innerText = `${year}年 ${month + 1}月`;
+            monthDisplay.innerHTML += '<div class="flex gap-1 justify-center mt-1"><button onclick="prevMonth()" class="text-xs px-1 hover:bg-gray-100 rounded">◀</button><button onclick="nextMonth()" class="text-xs px-1 hover:bg-gray-100 rounded">▶</button></div>';
+
+            const grid = document.getElementById('calendar-grid');
+            grid.innerHTML = '';
+            
+            // 曜日ヘッダー
+            const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+            dayNames.forEach(name => {
+                const div = document.createElement('div');
+                div.className = 'text-gray-500 font-bold text-center py-1';
+                div.innerText = name;
+                grid.appendChild(div);
+            });
+
+            // 日付を計算
+            const firstDay = new Date(year, month, 1).getDay();
+            const lastDate = new Date(year, month + 1, 0).getDate();
+            const prevLastDate = new Date(year, month, 0).getDate();
+
+            // 前月の日付
+            for (let i = firstDay - 1; i >= 0; i--) {
+                const div = document.createElement('div');
+                div.className = 'text-center py-1 text-gray-300 text-xs';
+                div.innerText = prevLastDate - i;
+                grid.appendChild(div);
+            }
+
+            // 今月の日付
+            const today = new Date();
+            for (let i = 1; i <= lastDate; i++) {
+                const div = document.createElement('div');
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === i;
+                
+                div.className = `text-center py-1 text-xs cursor-pointer rounded hover:bg-blue-100 ${
+                    isToday ? 'bg-blue-500 text-white font-bold' : 'text-gray-700'
+                }`;
+                div.innerText = i;
+                div.onclick = () => createPageFromDate(dateStr);
+                grid.appendChild(div);
+            }
+
+            // 来月の日付
+            const totalCells = grid.children.length - 7; // 曜日ヘッダー除く
+            for (let i = 1; i <= 42 - totalCells; i++) {
+                const div = document.createElement('div');
+                div.className = 'text-center py-1 text-gray-300 text-xs';
+                div.innerText = i;
+                grid.appendChild(div);
+            }
+        }
+
+        function prevMonth() {
+            currentCalendarMonth.setMonth(currentCalendarMonth.getMonth() - 1);
+            renderCalendar();
+        }
+
+        function nextMonth() {
+            currentCalendarMonth.setMonth(currentCalendarMonth.getMonth() + 1);
+            renderCalendar();
+        }
+
+        async function createPageFromDate(dateStr) {
+            // 日付をタイトルにしたページを作成
+            const res = await fetch('/api/pages/from-date', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ date: dateStr })
+            });
+            const page = await res.json();
+            await fetchPages();
+            loadPage(page.id);
+        }
+    </script>
+</body>
+</html>
