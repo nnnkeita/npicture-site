@@ -18,6 +18,7 @@
         .page-item:hover { background-color: #f3f4f6; }
         .page-item[draggable="true"] { cursor: move; }
         .active-page { background-color: #e5e7eb; font-weight: 500; }
+        .selected-page { background-color: #dbeafe; } /* light blue for selection */
         #context-menu { position: absolute; z-index: 50; display: none; background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-radius: 6px; min-width: 160px; }
         .menu-item { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; font-size: 14px; color: #374151; }
         .menu-item:hover { background-color: #f3f4f6; }
@@ -34,6 +35,7 @@
         html.dark #context-menu { background: #111827; border-color: #374151; }
         html.dark .menu-item { color: #d1d5db; }
         html.dark .menu-item:hover { background-color: #1f2937; }
+        html.dark .selected-page { background-color: #164e3f; } /* deep teal selection */
         html.dark .cover-image-container { background-color: #0b1220; }
         html.dark .border-gray-200 { border-color: #374151 !important; }
         html.dark .bg-white { background-color: #111827 !important; }
@@ -310,6 +312,9 @@
         let contextTargetId = null;
         let sortableInstance = null;
         let collapsedFolders = new Set(); // 折りたたまれたフォルダのIDを管理
+        let selectedPageIds = new Set(); // 複数選択用
+        let lastSelectedId = null; // Shiftレンジの基準
+        let visiblePageOrder = []; // 現在表示中の順序（フラット）
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -440,14 +445,18 @@
 
         async function contextAction(action) {
             hideContextMenu();
-            if (!contextTargetId) return;
+            if (!contextTargetId && selectedPageIds.size === 0) return;
             
             if (action === 'move_to_trash') {
-                if(confirm('このページをゴミ箱に移動しますか？')) {
-                    await fetch(`/api/pages/${contextTargetId}/move-to-trash`, { method: 'POST' });
-                    if(currentPageId === contextTargetId) {
-                        document.getElementById('editor-container').style.display = 'none';
+                const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : [contextTargetId];
+                if(confirm(`${targets.length}件をゴミ箱に移動しますか？`)) {
+                    for (const id of targets) {
+                        await fetch(`/api/pages/${id}/move-to-trash`, { method: 'POST' });
+                        if(currentPageId === id) {
+                            document.getElementById('editor-container').style.display = 'none';
+                        }
                     }
+                    selectedPageIds.clear();
                     fetchPages();
                 }
             } else if (action === 'rename') {
@@ -507,6 +516,7 @@
             const rootPages = await res.json();
             const container = document.getElementById('page-list');
             container.innerHTML = '';
+            visiblePageOrder = [];
             renderTree(rootPages, container);
         }
 
@@ -515,39 +525,41 @@
             pages.forEach(page => {
                 const wrapper = document.createElement('div');
                 const row = document.createElement('div');
-                row.className = `page-item px-3 py-1 text-sm text-gray-600 rounded cursor-pointer flex items-center group ${currentPageId === page.id ? 'active-page' : ''}`;
+                const isSelected = selectedPageIds.has(page.id);
+                row.className = `page-item px-3 py-1 text-sm text-gray-600 rounded cursor-pointer flex items-center group ${currentPageId === page.id ? 'active-page' : ''} ${isSelected ? 'selected-page' : ''}`;
                 row.draggable = true;
                 row.dataset.pageId = page.id;
-                
+                visiblePageOrder.push(page.id);
+
                 // フォルダかどうかを判定（子要素がある = フォルダ）
                 const isFolder = page.children && page.children.length > 0;
                 const isCollapsed = collapsedFolders.has(page.id);
-                
+
                 // フォルダの場合はトグルボタンを追加
                 let toggleBtn = '';
                 if (isFolder) {
                     toggleBtn = `<button class="mr-1 text-xs hover:bg-gray-200 rounded px-1 py-0.5" onclick="toggleFolder(event, ${page.id})">${isCollapsed ? '▶' : '▼'}</button>`;
                 }
-                
-                row.onclick = (e) => { e.stopPropagation(); loadPage(page.id); };
+
+                row.onclick = (e) => { e.stopPropagation(); handlePageRowClick(e, page.id); };
                 row.oncontextmenu = (e) => handleSidebarRightClick(e, page.id);
-                
+
                 // ドラッグイベント
                 row.ondragstart = (e) => {
                     e.dataTransfer.effectAllowed = 'move';
                     e.dataTransfer.setData('text/plain', page.id);
                 };
-                
+
                 row.ondragover = (e) => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     row.classList.add('bg-blue-100');
                 };
-                
+
                 row.ondragleave = (e) => {
                     row.classList.remove('bg-blue-100');
                 };
-                
+
                 row.ondrop = async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -584,6 +596,40 @@
                 }
                 container.appendChild(wrapper);
             });
+        }
+
+        function handlePageRowClick(e, id) {
+            if (e.shiftKey && lastSelectedId !== null) {
+                // レンジ選択
+                const start = visiblePageOrder.indexOf(lastSelectedId);
+                const end = visiblePageOrder.indexOf(id);
+                if (start !== -1 && end !== -1) {
+                    const [from, to] = start < end ? [start, end] : [end, start];
+                    for (let i = from; i <= to; i++) {
+                        selectedPageIds.add(visiblePageOrder[i]);
+                    }
+                }
+                fetchPages();
+                return;
+            }
+
+            if (e.metaKey || e.ctrlKey) {
+                // 個別トグル選択
+                if (selectedPageIds.has(id)) {
+                    selectedPageIds.delete(id);
+                } else {
+                    selectedPageIds.add(id);
+                }
+                lastSelectedId = id;
+                fetchPages();
+                return;
+            }
+
+            // 単一選択 + ページを開く
+            selectedPageIds = new Set([id]);
+            lastSelectedId = id;
+            fetchPages();
+            loadPage(id);
         }
 
         // フォルダの展開/折りたたみをトグル
