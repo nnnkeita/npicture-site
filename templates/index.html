@@ -142,12 +142,15 @@
         <div class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="page-list" oncontextmenu="handleSidebarRightClick(event, null)">
         </div>
 
-        <div class="p-2 border-t border-gray-200">
+        <div class="p-2 border-t border-gray-200 space-y-1">
             <button onclick="createPage()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">+</span> ページを追加
             </button>
             <button onclick="createFolder()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">📁</span> フォルダを追加
+            </button>
+            <button onclick="showTrash()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">🗑️</span> ゴミ箱
             </button>
         </div>
     </div>
@@ -200,7 +203,7 @@
     </div>
 
     <div id="context-menu">
-        <div class="menu-item" onclick="contextAction('delete')">削除</div>
+        <div class="menu-item" onclick="contextAction('move_to_trash')">ゴミ箱に移動</div>
         <div class="menu-item" onclick="contextAction('rename')">名前を変更</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">サブページ作成</div>
         <div class="menu-item" onclick="contextAction('new_folder')">フォルダ作成</div>
@@ -213,6 +216,20 @@
                 <input type="text" id="search-input" class="w-full text-lg border-none focus:ring-0" placeholder="検索..." oninput="performSearch()">
             </div>
             <div id="search-results" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+        </div>
+    </div>
+
+    <div id="trash-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeTrash(event)">
+        <div class="bg-white w-full max-w-2xl rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-800">🗑️ ゴミ箱</h2>
+                <button onclick="closeTrash()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div id="trash-list" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+            <div class="p-4 border-t border-gray-200 flex justify-end gap-2">
+                <button onclick="emptyTrash()" class="px-4 py-2 text-sm text-white bg-red-500 hover:bg-red-600 rounded">すべて削除</button>
+                <button onclick="closeTrash()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded">閉じる</button>
+            </div>
         </div>
     </div>
 
@@ -326,9 +343,9 @@
             hideContextMenu();
             if (!contextTargetId) return;
             
-            if (action === 'delete') {
-                if(confirm('このページを削除しますか？')) {
-                    await fetch(`/api/pages/${contextTargetId}`, { method: 'DELETE' });
+            if (action === 'move_to_trash') {
+                if(confirm('このページをゴミ箱に移動しますか？')) {
+                    await fetch(`/api/pages/${contextTargetId}/move-to-trash`, { method: 'POST' });
                     if(currentPageId === contextTargetId) {
                         document.getElementById('editor-container').style.display = 'none';
                     }
@@ -587,6 +604,68 @@
             });
         }
         document.addEventListener('keydown', e => { if((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearch(); } });
+
+        // --- ゴミ箱機能 ---
+        async function showTrash() {
+            const res = await fetch('/api/trash');
+            const trashPages = await res.json();
+            const trashList = document.getElementById('trash-list');
+            trashList.innerHTML = '';
+
+            if (trashPages.length === 0) {
+                trashList.innerHTML = '<div class="text-center text-gray-400 py-8">ゴミ箱は空です</div>';
+            } else {
+                trashPages.forEach(page => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100';
+                    div.innerHTML = `
+                        <div class="flex items-center gap-2 flex-1">
+                            <span class="text-2xl">${page.icon}</span>
+                            <span class="text-gray-700">${page.title || '無題'}</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="restorePage(${page.id})" class="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded">復元</button>
+                            <button onclick="permanentlyDeletePage(${page.id})" class="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded">削除</button>
+                        </div>
+                    `;
+                    trashList.appendChild(div);
+                });
+            }
+
+            document.getElementById('trash-modal').classList.remove('hidden');
+        }
+
+        function closeTrash(e) {
+            if (!e || e.target.id === 'trash-modal') {
+                document.getElementById('trash-modal').classList.add('hidden');
+            }
+        }
+
+        async function restorePage(pageId) {
+            await fetch(`/api/pages/${pageId}/restore`, { method: 'POST' });
+            showTrash();
+            fetchPages();
+        }
+
+        async function permanentlyDeletePage(pageId) {
+            if(confirm('このページを完全に削除しますか？この操作は取り消せません。')) {
+                await fetch(`/api/pages/${pageId}`, { method: 'DELETE' });
+                showTrash();
+                fetchPages();
+            }
+        }
+
+        async function emptyTrash() {
+            if(confirm('ゴミ箱をすべて空にしますか？この操作は取り消せません。')) {
+                const res = await fetch('/api/trash');
+                const trashPages = await res.json();
+                for (const page of trashPages) {
+                    await fetch(`/api/pages/${page.id}`, { method: 'DELETE' });
+                }
+                showTrash();
+                fetchPages();
+            }
+        }
     </script>
 </body>
 </html>
