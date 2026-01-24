@@ -5,6 +5,7 @@ import json
 import os
 from werkzeug.utils import secure_filename
 import uuid
+import subprocess
 
 # --- パス設定（PythonAnywhereで迷子にならないように絶対パスで指定） ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -341,6 +342,18 @@ def upload_file():
         return jsonify({'success': True, 'file_url': file_url, 'block_type': block_type})
         
     return jsonify({'error': 'Page ID missing'}), 400
+
+# --- 自動デプロイ用Webhook ---
+@app.route('/webhook_deploy', methods=['POST'])
+def webhook_deploy():
+    # GitHubから最新コードを強制的に取得
+    subprocess.run(['git', 'fetch', '--all'], cwd='/home/nnnkeita/mysite')
+    subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd='/home/nnnkeita/mysite')
+    
+    # サーバーをリロード（タッチ）
+    subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'])
+    
+    return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
 
 # 初期化実行（インポート時にも走るようにコンテキスト内で行う）
 with app.app_context():
