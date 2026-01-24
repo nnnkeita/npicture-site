@@ -6,6 +6,7 @@ import os
 from werkzeug.utils import secure_filename
 import uuid
 import subprocess
+from datetime import datetime
 
 # --- パス設定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
