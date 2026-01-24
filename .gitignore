@@ -1,0 +1,12 @@
+# データベースはGitに上げない
+notion.db
+
+# 画像フォルダもGitに上げない
+uploads/
+
+# Pythonの一時ファイル
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
