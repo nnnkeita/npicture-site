@@ -143,11 +143,23 @@
             </div>
 
         <div class="p-2 border-t border-gray-200">
+            <details class="mb-2">
+                <summary class="cursor-pointer text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-2">📋 テンプレート</summary>
+                <div class="ml-2 space-y-1">
+                    <button onclick="createFromTemplate('daily')" class="w-full text-left px-3 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">📝 今日の記録</button>
+                    <button onclick="createFromTemplate('reading')" class="w-full text-left px-3 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">📚 読書メモ</button>
+                    <button onclick="createFromTemplate('meeting')" class="w-full text-left px-3 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">💼 会議メモ</button>
+                </div>
+            </details>
+            
             <button onclick="createPage()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">+</span> ページを追加
             </button>
             <button onclick="createFolder()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">📁</span> フォルダを追加
+            </button>
+            <button onclick="openTrash()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">🗑️</span> ゴミ箱
             </button>
         </div>
     </div>
@@ -191,6 +203,7 @@
                         <button onclick="addBlock('text')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📝 テキスト（複数行）</button>
                         <button onclick="addBlock('text-line')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">✏️ テキスト（1行）</button>
                         <button onclick="addBlock('h1')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
+                        <button onclick="addBlock('toggle')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">▶ トグルリスト</button>
                         <button onclick="addBlock('todo')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
                         <button onclick="addBlock('image')" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🖼️ 画像</button>
                     </div>
@@ -200,10 +213,27 @@
     </div>
 
     <div id="context-menu">
-        <div class="menu-item" onclick="contextAction('delete')">🗑️ 削除</div>
+        <div class="menu-item" onclick="contextAction('pin')">📌 ピン留め</div>
+        <div class="menu-item" onclick="contextAction('delete')">🗑️ ゴミ箱へ</div>
         <div class="menu-item" onclick="contextAction('rename')">✏️ 名前を変更</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">📄 サブページ作成</div>
         <div class="menu-item" onclick="contextAction('new_folder')">📁 フォルダ作成</div>
+        <div class="menu-item" onclick="contextAction('change_icon')">😀 アイコン変更</div>
+    </div>
+
+    <div id="trash-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeTrash(event)">
+        <div class="bg-white w-full max-w-2xl rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-lg font-bold">🗑️ ゴミ箱</h2>
+                <button onclick="closeTrash()" class="text-gray-400 hover:text-gray-600">×</button>
+            </div>
+            <div id="trash-list" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="emoji-picker" class="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-4 hidden z-50" style="width: 320px; max-height: 400px; overflow-y: auto;">
+        <div class="text-xs font-bold text-gray-500 mb-2">絵文字を選択</div>
+        <div id="emoji-grid" class="grid grid-cols-8 gap-1"></div>
     </div>
 
     <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-start justify-center pt-20" onclick="closeSearch(event)">
@@ -319,15 +349,81 @@
             document.getElementById('context-menu').style.display = 'none';
         }
 
+        // テンプレートからページ作成
+        async function createFromTemplate(template) {
+            const res = await fetch('/api/pages/from-template', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ template: template })
+            });
+            const page = await res.json();
+            await fetchPages();
+            loadPage(page.id);
+        }
+
+        // ゴミ箱を開く
+        async function openTrash() {
+            const res = await fetch('/api/trash');
+            const trash = await res.json();
+            const list = document.getElementById('trash-list');
+            list.innerHTML = '';
+            
+            if(trash.length === 0) {
+                list.innerHTML = '<div class="text-gray-400 text-center py-8">ゴミ箱は空です</div>';
+            } else {
+                trash.forEach(page => {
+                    const div = document.createElement('div');
+                    div.className = 'p-3 bg-gray-50 rounded flex justify-between items-center';
+                    div.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span>${page.icon}</span>
+                            <span class="text-sm">${page.title || '無題'}</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="restorePage(${page.id})" class="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">復元</button>
+                            <button onclick="permanentDelete(${page.id})" class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">完全削除</button>
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+            }
+            
+            document.getElementById('trash-modal').classList.remove('hidden');
+        }
+
+        function closeTrash(event) {
+            if(!event || event.target.id === 'trash-modal') {
+                document.getElementById('trash-modal').classList.add('hidden');
+            }
+        }
+
+        async function restorePage(id) {
+            await fetch(`/api/pages/${id}/restore`, { method: 'POST' });
+            openTrash();
+            fetchPages();
+        }
+
+        async function permanentDelete(id) {
+            if(confirm('完全に削除しますか？この操作は取り消せません。')) {
+                await fetch(`/api/pages/${id}`, { method: 'DELETE' });
+                openTrash();
+                fetchPages();
+            }
+        }
+
         async function contextAction(action) {
             hideContextMenu();
-            if (!contextTargetId && action === 'delete') return;
-            if (action === 'delete') {
-                if(confirm('本当に削除しますか？')) {
-                    await fetch(`/api/pages/${contextTargetId}`, { method: 'DELETE' });
-                    if(currentPageId === contextTargetId) document.getElementById('editor-container').style.display = 'none';
-                    fetchPages();
+            if (!contextTargetId && (action === 'delete' || action === 'pin')) return;
+            
+            if (action === 'pin') {
+                await fetch(`/api/pages/${contextTargetId}/toggle-pin`, { method: 'POST' });
+                fetchPages();
+            } else if (action === 'delete') {
+                await fetch(`/api/pages/${contextTargetId}/move-to-trash`, { method: 'POST' });
+                if(currentPageId === contextTargetId) {
+                    document.getElementById('editor-container').style.display = 'none';
                 }
+                fetchPages();
             } else if (action === 'rename') {
                 const newTitle = prompt('新しい名前:');
                 if(newTitle) {
@@ -337,6 +433,51 @@
                         body: JSON.stringify({ title: newTitle })
                     });
                     fetchPages();
+                    if(currentPageId === contextTargetId) document.getElementById('page-title').value = newTitle;
+                }
+            } else if (action === 'change_icon') {
+                showEmojiPicker();
+            } else if (action === 'new_sub') {
+                createPageIn(contextTargetId);
+            } else if (action === 'new_folder') {
+                createFolder(contextTargetId);
+            }
+        }
+
+        // 絵文字ピッカー
+        function showEmojiPicker() {
+            const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','📝','📚','💼','📁','📂','📃','📄','📋','📌','📍','📎','🔗','📖','📕','📗','📘','📙','📓','📔','📒','📰','🗞️','📑','🔖','🏷️','💡','🔦','🕯️','💰','💳','🔑','🗝️','🏆','🎯','🎪','🎨','🎭','🎬','🎤','🎧','🎵','🎶','🎹','🎺','🎻','🥁','🎷'];
+            const picker = document.getElementById('emoji-picker');
+            const grid = document.getElementById('emoji-grid');
+            grid.innerHTML = '';
+            
+            emojis.forEach(emoji => {
+                const btn = document.createElement('button');
+                btn.className = 'text-2xl hover:bg-gray-100 rounded p-1';
+                btn.innerText = emoji;
+                btn.onclick = async () => {
+                    await fetch(`/api/pages/${contextTargetId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ icon: emoji })
+                    });
+                    fetchPages();
+                    if(currentPageId === contextTargetId) document.getElementById('page-icon').innerText = emoji;
+                    picker.classList.add('hidden');
+                };
+                grid.appendChild(btn);
+            });
+            
+            picker.classList.remove('hidden');
+            picker.style.left = event.pageX + 'px';
+            picker.style.top = event.pageY + 'px';
+        }
+
+        document.addEventListener('click', (e) => {
+            if(!e.target.closest('#emoji-picker')) {
+                document.getElementById('emoji-picker').classList.add('hidden');
+            }
+        });
                     if(currentPageId === contextTargetId) document.getElementById('page-title').value = newTitle;
                 }
             } else if (action === 'new_sub') {
@@ -383,6 +524,7 @@
                 row.innerHTML = `
                     <span class="mr-2 opacity-70">${page.icon}</span>
                     <span class="truncate flex-1">${page.title || '無題'}</span>
+                    ${page.is_pinned ? '<span class="text-xs">📌</span>' : ''}
                 `;
                 wrapper.appendChild(row);
 
@@ -441,6 +583,20 @@
                 } else if (block.type === 'text-line') {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `<input type="text" class="w-full border-none focus:ring-0 bg-transparent cursor-text" value="${escapedContent}" placeholder="1行テキスト..." oninput="updateBlock(${block.id}, 'content', this.value)">`;
+                } else if (block.type === 'toggle') {
+                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
+                    const isCollapsed = block.collapsed ? 1 : 0;
+                    contentHtml = `
+                        <details ${isCollapsed ? '' : 'open'} onToggle="updateBlock(${block.id}, 'collapsed', !this.open)" class="w-full">
+                            <summary class="cursor-pointer font-semibold list-none flex items-center gap-2">
+                                <span>▶</span>
+                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedContent}" placeholder="トグルタイトル..." oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()">
+                            </summary>
+                            <div class="ml-6 mt-2">
+                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)"></textarea>
+                            </div>
+                        </details>
+                    `;
                 } else {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;

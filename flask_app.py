@@ -46,7 +46,25 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE pages ADD COLUMN cover_image TEXT DEFAULT ''")
     except sqlite3.OperationalError:
-        pass 
+        pass
+    
+    # 新機能用カラム追加
+    try:
+        cursor.execute("ALTER TABLE pages ADD COLUMN is_pinned BOOLEAN DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute("ALTER TABLE pages ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    
+    # ブロック用の折りたたみカラム
+    try:
+        cursor.execute("ALTER TABLE blocks ADD COLUMN collapsed BOOLEAN DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +102,8 @@ def download_file(filename):
 def get_pages():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM pages ORDER BY position ASC, created_at ASC')
+    # ゴミ箱除外、ピン留めを優先
+    cursor.execute('SELECT * FROM pages WHERE is_deleted = 0 ORDER BY is_pinned DESC, position ASC, created_at ASC')
     all_pages = [dict(row) for row in cursor.fetchall()]
     conn.close()
     page_map = {page['id']: {**page, 'children': []} for page in all_pages}
@@ -95,6 +114,15 @@ def get_pages():
         else:
             roots.append(page_map[page['id']])
     return jsonify(roots)
+
+@app.route('/api/trash', methods=['GET'])
+def get_trash():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM pages WHERE is_deleted = 1 ORDER BY updated_at DESC')
+    trash_pages = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(trash_pages)
 
 @app.route('/api/pages', methods=['POST'])
 def create_page():
@@ -181,6 +209,83 @@ def create_folder():
     conn.close()
     return jsonify(folder)
 
+@app.route('/api/pages/from-template', methods=['POST'])
+def create_page_from_template():
+    data = request.json
+    template_type = data.get('template')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # テンプレート定義
+    templates = {
+        'daily': {
+            'title': f'{datetime.now().strftime("%Y年%m月%d日")}の記録',
+            'icon': '📝',
+            'blocks': [
+                {'type': 'h1', 'content': '体調'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '天気'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'やったこと'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '振り返り'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        'reading': {
+            'title': '読書メモ',
+            'icon': '📚',
+            'blocks': [
+                {'type': 'h1', 'content': '本のタイトル'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '著者'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '読んだ日'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '感想・メモ'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        'meeting': {
+            'title': '会議メモ',
+            'icon': '💼',
+            'blocks': [
+                {'type': 'h1', 'content': '日時'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '参加者'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '議題'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '決定事項'},
+                {'type': 'todo', 'content': ''},
+            ]
+        }
+    }
+    
+    template = templates.get(template_type, templates['daily'])
+    
+    cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+    max_pos = cursor.fetchone()[0]
+    new_pos = (max_pos if max_pos is not None else -1) + 1
+    
+    cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                   (template['title'], template['icon'], None, new_pos))
+    page_id = cursor.lastrowid
+    
+    # ブロックを追加
+    for i, block in enumerate(template['blocks']):
+        cursor.execute(
+            "INSERT INTO blocks (page_id, type, content, checked, position) VALUES (?, ?, ?, ?, ?)",
+            (page_id, block['type'], block['content'], block.get('checked', 0), i)
+        )
+    
+    conn.commit()
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(page)
+
 @app.route('/api/pages/<int:page_id>', methods=['GET'])
 def get_page(page_id):
     conn = get_db()
@@ -203,7 +308,7 @@ def update_page(page_id):
     cursor = conn.cursor()
     updates = []
     values = []
-    fields = ['title', 'icon', 'parent_id', 'cover_image']
+    fields = ['title', 'icon', 'parent_id', 'cover_image', 'is_pinned', 'is_deleted']
     for field in fields:
         if field in data:
             updates.append(f'{field} = ?')
@@ -217,6 +322,36 @@ def update_page(page_id):
     page = dict(cursor.fetchone())
     conn.close()
     return jsonify(page)
+
+@app.route('/api/pages/<int:page_id>/toggle-pin', methods=['POST'])
+def toggle_pin(page_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT is_pinned FROM pages WHERE id = ?', (page_id,))
+    row = cursor.fetchone()
+    new_pinned = 0 if row[0] else 1
+    cursor.execute('UPDATE pages SET is_pinned = ? WHERE id = ?', (new_pinned, page_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'is_pinned': new_pinned})
+
+@app.route('/api/pages/<int:page_id>/move-to-trash', methods=['POST'])
+def move_to_trash(page_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE pages SET is_deleted = 1 WHERE id = ?', (page_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/pages/<int:page_id>/restore', methods=['POST'])
+def restore_page(page_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE pages SET is_deleted = 0 WHERE id = ?', (page_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 @app.route('/api/pages/<int:page_id>', methods=['DELETE'])
 def delete_page(page_id):
