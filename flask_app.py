@@ -390,7 +390,7 @@ def webhook_deploy():
 with app.app_context():
     init_db()
 
-# PythonAnywhereはこの if __name__ == ... ブロックを実行しませんが、
-# ローカル開発用として残しておきます
-if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+# PythonAnywhereはこの if __name__ == ... ブロックを実行しません
+# ローカル開発用として残しておきますが、PythonAnywhereではコメントアウト
+# if __name__ == '__main__':
+#     app.run(debug=True, port=5001)
