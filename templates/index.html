@@ -184,9 +184,16 @@
                 <div id="blocks" class="space-y-1 pb-10"></div>
                 
                 <div class="mt-4 text-gray-300 hover:text-gray-500 cursor-pointer text-sm p-2 group">
-                    <button onclick="addBlock('text')" class="flex items-center gap-2">
+                    <button onclick="toggleBlockMenu()" class="flex items-center gap-2">
                         + クリックしてブロックを追加
                     </button>
+                    <div id="block-type-menu" class="hidden mt-2 bg-white rounded shadow-lg border border-gray-200 p-2 space-y-1 absolute z-10">
+                        <button onclick="addBlock('text'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📝 テキスト</button>
+                        <button onclick="addBlock('h1'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
+                        <button onclick="addBlock('toggle'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">▶ トグルリスト</button>
+                        <button onclick="addBlock('todo'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
+                        <button onclick="addBlock('image'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🖼️ 画像</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -232,6 +239,15 @@
             overlay.classList.remove('active');
         }
         let currentCalendarDate = new Date(); // カレンダー表示用
+
+        // ブロックメニューの表示/非表示
+        function toggleBlockMenu() {
+            document.getElementById('block-type-menu').classList.toggle('hidden');
+        }
+        
+        function hideBlockMenu() {
+            document.getElementById('block-type-menu').classList.add('hidden');
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             fetchPages();
@@ -438,6 +454,20 @@
                     contentHtml = `
                         <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
                         <input class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">
+                    `;
+                } else if (block.type === 'toggle') {
+                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
+                    const isCollapsed = block.collapsed ? 1 : 0;
+                    contentHtml = `
+                        <details ${block.collapsed ? '' : 'open'} class="w-full">
+                            <summary class="cursor-pointer font-semibold list-none flex items-center gap-2 select-none">
+                                <span>▶</span>
+                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedContent}" placeholder="トグルタイトル..." oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()">
+                            </summary>
+                            <div class="ml-6 mt-2 pl-2 border-l-2 border-gray-200">
+                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." oninput="autoResizeTextarea(this); updateBlock(${block.id}, 'collapsed', !document.querySelector('details').open)">${escapedContent}</textarea>
+                            </div>
+                        </details>
                     `;
                 } else {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
