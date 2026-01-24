@@ -186,10 +186,68 @@ def create_page_from_date():
     cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
                    (title, '📅', None, new_pos))
     page_id = cursor.lastrowid
-    
-    # デフォルトのテキストブロック
+
+    # 親ページにデフォルトのテキストブロック
     cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', 0)", (page_id,))
-    
+
+    # 子ページ（ツリー）を自動生成: 日記 / 筋トレ / 英語学習
+    children_templates = [
+        {
+            'title': '日記',
+            'icon': '📝',
+            'blocks': [
+                {'type': 'h1', 'content': '体調'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '天気'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'やったこと'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '振り返り'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '筋トレ',
+            'icon': '🏋️',
+            'blocks': [
+                {'type': 'h1', 'content': '今日のメニュー'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': 'セット・回数'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'メモ'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '英語学習',
+            'icon': '🌍',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の学習内容'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '新しい単語'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '発音練習'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'リスニング時間'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '気づいたこと'},
+                {'type': 'text', 'content': ''},
+            ]
+        }
+    ]
+
+    for i, child in enumerate(children_templates):
+        # 子ページの並び順は0,1,2...
+        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                       (child['title'], child['icon'], page_id, i))
+        child_id = cursor.lastrowid
+        # 子ページのブロック追加
+        for j, block in enumerate(child['blocks']):
+            cursor.execute(
+                "INSERT INTO blocks (page_id, type, content, checked, position) VALUES (?, ?, ?, ?, ?)",
+                (child_id, block['type'], block.get('content', ''), block.get('checked', 0), j)
+            )
+
     conn.commit()
     cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
     page = dict(cursor.fetchone())
