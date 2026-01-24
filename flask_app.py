@@ -417,7 +417,7 @@ def update_block(block_id):
     cursor = conn.cursor()
     updates = []
     values = []
-    fields = ['type', 'content', 'checked', 'position']
+    fields = ['type', 'content', 'checked', 'position', 'collapsed', 'details']
     for field in fields:
         if field in data:
             updates.append(f'{field} = ?')
