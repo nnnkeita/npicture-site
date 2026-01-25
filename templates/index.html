@@ -121,22 +121,22 @@
             background-color: #164e3f !important;
         }
 
-        /* 今日の浮上パネルのダーク版 */
-        html.dark #today-highlights {
-            background: linear-gradient(to right, #0b1f1a, #0d1f1a) !important;
+        /* 今日の浮上セクション（左メニュー）のダーク版 */
+        html.dark #today-highlights-sidebar {
+            background: linear-gradient(to bottom, #0b1f1a, #0d1f1a) !important;
             border-color: #16a34a !important;
         }
 
-        html.dark #today-highlights h3 {
+        html.dark #today-highlights-sidebar h3 {
             color: #86efac !important;
         }
 
-        html.dark #today-highlights-list .bg-white {
+        html.dark #today-highlights-sidebar-list button {
             background-color: #111827 !important;
             color: #e5e7eb !important;
         }
 
-        html.dark #today-highlights-list .bg-yellow-50 {
+        html.dark #today-highlights-sidebar-list button:hover {
             background-color: #1f1f0f !important;
         }
         
@@ -225,6 +225,14 @@
             <button onclick="openSearch()" class="text-gray-400 hover:text-gray-600" title="検索">🔍</button>
         </div>
         
+        <!-- 今日の浮上セクション -->
+        <div id="today-highlights-sidebar" class="hidden px-2 py-3 border-b border-yellow-200 bg-gradient-to-b from-yellow-50 to-orange-50">
+            <h3 class="text-xs font-bold text-yellow-800 px-2 mb-2">✨ 今日の浮上</h3>
+            <div id="today-highlights-sidebar-list" class="space-y-1 max-h-32 overflow-y-auto">
+                <!-- ここに今日のブロックが表示される -->
+            </div>
+        </div>
+        
         <div class="px-4 py-2 border-b border-gray-200">
             <div class="flex justify-between items-center mb-2">
                 <button onclick="changeMonth(-1)" class="text-gray-400 hover:text-gray-600 text-xs">◀</button>
@@ -242,9 +250,9 @@
 
         <!-- あとで調べるリンク -->
         <div class="px-2 py-2 border-t border-gray-200">
-            <button id="inbox-link" onclick="openInbox()" class="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded flex items-center gap-2 bg-blue-50">
+            <a href="/inbox" class="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded flex items-center gap-2 bg-blue-50 cursor-pointer">
                 <span>🔖</span> あとで調べる
-            </button>
+            </a>
         </div>
 
         <div class="p-2 border-t border-gray-200 space-y-1">
@@ -305,16 +313,6 @@
                     <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
                         翌日 →
                     </button>
-                </div>
-
-                <!-- 今日の浮上パネル -->
-                <div id="today-highlights" class="hidden mb-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-lg p-4">
-                    <h3 class="font-bold text-yellow-800 mb-3 flex items-center gap-2">
-                        ✨ 今日の浮上
-                    </h3>
-                    <div id="today-highlights-list" class="space-y-2 max-h-40 overflow-y-auto">
-                        <!-- ここに今日のブロックが表示される -->
-                    </div>
                 </div>
                 
                 <div id="blocks" class="space-y-1 pb-10"></div>
@@ -1309,27 +1307,27 @@
             }
         }
 
-        // --- 今日の浮上パネル ---
+        // --- 今日の浮上パネル（左メニュー） ---
         async function loadTodayHighlights() {
             if (!currentPageId) return;
             
             const res = await fetch(`/api/today-highlights/${currentPageId}`);
             const highlights = await res.json();
-            const panel = document.getElementById('today-highlights');
-            const list = document.getElementById('today-highlights-list');
+            const sidebarPanel = document.getElementById('today-highlights-sidebar');
+            const sidebarList = document.getElementById('today-highlights-sidebar-list');
             
             if (!highlights || highlights.length === 0) {
-                panel.classList.add('hidden');
+                sidebarPanel.classList.add('hidden');
                 return;
             }
             
-            panel.classList.remove('hidden');
-            list.innerHTML = '';
+            sidebarPanel.classList.remove('hidden');
+            sidebarList.innerHTML = '';
             
             highlights.forEach(block => {
-                const item = document.createElement('div');
-                item.className = 'p-2 bg-white rounded border-l-2 border-yellow-400 hover:bg-yellow-50 cursor-pointer text-sm text-gray-700';
-                item.textContent = block.content.substring(0, 60) + (block.content.length > 60 ? '...' : '');
+                const item = document.createElement('button');
+                item.className = 'w-full text-left px-2 py-1.5 bg-white rounded border-l-2 border-yellow-400 hover:bg-yellow-50 cursor-pointer text-xs text-gray-700 truncate';
+                item.textContent = block.content.substring(0, 50) + (block.content.length > 50 ? '...' : '');
                 item.onclick = () => {
                     const blockEl = document.querySelector(`[data-id="${block.id}"]`);
                     if (blockEl) {
@@ -1338,7 +1336,7 @@
                         setTimeout(() => blockEl.classList.remove('highlight-block'), 2000);
                     }
                 };
-                list.appendChild(item);
+                sidebarList.appendChild(item);
             });
         }
     </script>

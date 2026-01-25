@@ -374,6 +374,14 @@ def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, p
 def index():
     return render_template('index.html')
 
+@app.route('/inbox')
+def inbox_page():
+    """あとで調べるページへのショートカットURL"""
+    inbox = get_or_create_inbox()
+    if inbox:
+        return render_template('index.html', inbox_id=inbox['id'])
+    return render_template('index.html')
+
 @app.route('/uploads/<filename>')
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
