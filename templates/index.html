@@ -476,6 +476,8 @@
             applyThemeFromStorage();
             fetchPages();
             renderCalendar();
+            // 起動時に今日のページを自動で開く
+            openTodayPage();
         });
 
         // --- カレンダー機能 ---
@@ -576,6 +578,19 @@
             
             // 日付ページを作成または開く
             await createPageFromDate(newYear, newMonth, newDay);
+        }
+
+        async function openTodayPage() {
+            // 今日の日付を取得
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = today.getMonth() + 1;
+            const day = today.getDate();
+            
+            // 少し遅延させてページ読み込み完了を待つ
+            setTimeout(async () => {
+                await createPageFromDate(year, month, day);
+            }, 100);
         }
 
         // --- 以下、既存の機能 ---
