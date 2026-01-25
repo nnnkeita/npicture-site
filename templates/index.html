@@ -187,6 +187,9 @@
             <button onclick="showTrash()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">🗑️</span> ゴミ箱
             </button>
+            <button onclick="showExportImportMenu()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
+                <span class="mr-2">💾</span> インポート/エクスポート
+            </button>
         </div>
     </div>
 
@@ -269,6 +272,41 @@
         </div>
     </div>
 
+    <div id="export-import-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeExportImportMenu(event)">
+        <div class="bg-white w-full max-w-md rounded-lg shadow-xl overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-800">💾 インポート/エクスポート</h2>
+                <button onclick="closeExportImportMenu()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div class="p-4 space-y-3">
+                <div class="border-b pb-3">
+                    <h3 class="font-bold text-gray-700 mb-2">📥 インポート</h3>
+                    <button onclick="triggerJsonImport()" class="w-full text-left px-4 py-2 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 text-sm text-gray-700">
+                        📄 JSON をインポート
+                    </button>
+                    <button onclick="triggerZipImport()" class="w-full text-left px-4 py-2 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 text-sm text-gray-700 mt-2">
+                        📦 ZIP をインポート
+                    </button>
+                </div>
+                <div>
+                    <h3 class="font-bold text-gray-700 mb-2">📤 エクスポート</h3>
+                    <button onclick="exportAllJson()" class="w-full text-left px-4 py-2 bg-green-50 hover:bg-green-100 rounded border border-green-200 text-sm text-gray-700">
+                        📄 すべてを JSON でエクスポート
+                    </button>
+                    <button onclick="exportPageJson()" class="w-full text-left px-4 py-2 bg-green-50 hover:bg-green-100 rounded border border-green-200 text-sm text-gray-700 mt-2" id="export-page-json-btn" style="display:none;">
+                        📄 このページを JSON でエクスポート
+                    </button>
+                    <button onclick="exportPageMarkdown()" class="w-full text-left px-4 py-2 bg-green-50 hover:bg-green-100 rounded border border-green-200 text-sm text-gray-700 mt-2" id="export-page-md-btn" style="display:none;">
+                        📝 このページを Markdown でエクスポート
+                    </button>
+                    <button onclick="exportPageZip()" class="w-full text-left px-4 py-2 bg-green-50 hover:bg-green-100 rounded border border-green-200 text-sm text-gray-700 mt-2" id="export-page-zip-btn" style="display:none;">
+                        📦 このページを ZIP でエクスポート
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="template-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeTemplateMenu(event)">
         <div class="bg-white w-full max-w-md rounded-lg shadow-xl overflow-hidden flex flex-col">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -294,6 +332,8 @@
 
     <input type="file" id="cover-upload" class="hidden" accept="image/*" onchange="uploadCover(this)">
     <input type="file" id="block-upload" class="hidden" onchange="uploadBlockFile(this)">
+    <input type="file" id="json-import" class="hidden" accept=".json" onchange="importJsonFile(this)">
+    <input type="file" id="zip-import" class="hidden" accept=".zip" onchange="importZipFile(this)">
 
     <script>
         // Service Worker登録（PWA対応）
@@ -904,6 +944,59 @@
             await fetchPages();
             loadPage(page.id);
         }
+        // --- エクスポート/インポート機能 ---
+        function showExportImportMenu() {
+            document.getElementById('export-import-modal').classList.remove('hidden');
+            const btns = ['export-page-json-btn', 'export-page-md-btn', 'export-page-zip-btn'];
+            if (currentPageId) {
+                btns.forEach(id => document.getElementById(id).style.display = 'block');
+            } else {
+                btns.forEach(id => document.getElementById(id).style.display = 'none');
+            }
+        }
+        function closeExportImportMenu(e) {
+            if (!e || e.target.id === 'export-import-modal') {
+                document.getElementById('export-import-modal').classList.add('hidden');
+            }
+        }
+        function triggerJsonImport() { document.getElementById('json-import').click(); }
+        function triggerZipImport() { document.getElementById('zip-import').click(); }
+        async function importJsonFile(input) {
+            if (!input.files[0]) return;
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            const res = await fetch('/api/import/json', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                await fetchPages();
+                if (data.imported_ids?.length > 0) loadPage(data.imported_ids[0]);
+                closeExportImportMenu();
+            } else {
+                alert(`❌ エラー: ${data.error}`);
+            }
+            input.value = '';
+        }
+        async function importZipFile(input) {
+            if (!input.files[0]) return;
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            const res = await fetch('/api/import/zip', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                await fetchPages();
+                if (data.imported_ids?.length > 0) loadPage(data.imported_ids[0]);
+                closeExportImportMenu();
+            } else {
+                alert(`❌ エラー: ${data.error}`);
+            }
+            input.value = '';
+        }
+        function exportAllJson() { window.location.href = '/api/export/all/json'; closeExportImportMenu(); }
+        function exportPageJson() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/json`; closeExportImportMenu(); }
+        function exportPageMarkdown() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/markdown`; closeExportImportMenu(); }
+        function exportPageZip() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/zip`; closeExportImportMenu(); }
     </script>
 </body>
 </html>

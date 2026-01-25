@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 import sqlite3
 import json
 import os
@@ -7,6 +7,10 @@ from werkzeug.utils import secure_filename
 import uuid
 import subprocess
 from datetime import datetime, timedelta
+import zipfile
+import io
+import shutil
+from pathlib import Path
 
 # --- パス設定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -116,6 +120,121 @@ def hard_delete_tree(cursor, page_id):
     for row in cursor.fetchall():
         hard_delete_tree(cursor, row['id'])
     cursor.execute('DELETE FROM pages WHERE id = ?', (page_id,))
+
+
+def export_page_to_dict(cursor, page_id):
+    """
+    ページとその全ブロック・子ページを辞書に変換（エクスポート用）
+    """
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page_row = cursor.fetchone()
+    if not page_row:
+        return None
+    
+    page = dict(page_row)
+    cursor.execute('SELECT * FROM blocks WHERE page_id = ? ORDER BY position', (page_id,))
+    page['blocks'] = [dict(row) for row in cursor.fetchall()]
+    
+    cursor.execute('SELECT * FROM pages WHERE parent_id = ? ORDER BY position', (page_id,))
+    page['children'] = [export_page_to_dict(cursor, row['id']) for row in cursor.fetchall()]
+    
+    return page
+
+
+def page_to_markdown(page, level=1):
+    """
+    ページをMarkdownフォーマットに変換（再帰的）
+    """
+    lines = []
+    
+    # ページタイトルを見出しで表現
+    heading = '#' * level
+    lines.append(f"{heading} {page.get('icon', '📄')} {page.get('title', '無題')}")
+    lines.append('')
+    
+    # ブロックをMarkdownに変換
+    for block in page.get('blocks', []):
+        block_type = block.get('type', 'text')
+        content = block.get('content', '')
+        
+        if block_type == 'h1':
+            lines.append(f"### {content}")
+            lines.append('')
+        elif block_type == 'todo':
+            checked = '✓' if block.get('checked') else '☐'
+            lines.append(f"- [{checked}] {content}")
+        elif block_type == 'toggle':
+            lines.append(f"**{content}**")
+            details = block.get('details', '')
+            if details:
+                lines.append(details)
+            lines.append('')
+        elif block_type == 'image':
+            lines.append(f"![Image]({content})")
+            lines.append('')
+        else:  # text
+            if content:
+                lines.append(content)
+                lines.append('')
+    
+    # 子ページを再帰的に変換
+    for child in page.get('children', []):
+        lines.append(page_to_markdown(child, level + 1))
+        lines.append('')
+    
+    return '\n'.join(lines)
+
+
+def create_page_from_dict(cursor, page_dict, parent_id=None, position=None):
+    """
+    辞書からページを作成（インポート用）
+    """
+    parent_id = parent_id if parent_id is not None else page_dict.get('parent_id')
+    
+    if position is None:
+        if parent_id:
+            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
+        else:
+            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+        max_pos = cursor.fetchone()[0]
+        position = (max_pos if max_pos is not None else -1) + 1
+    
+    cursor.execute(
+        'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (
+            page_dict.get('title', ''),
+            page_dict.get('icon', '📄'),
+            page_dict.get('cover_image', ''),
+            parent_id,
+            position,
+            page_dict.get('is_pinned', 0),
+            0
+        )
+    )
+    new_page_id = cursor.lastrowid
+    
+    # ブロック追加
+    for block in page_dict.get('blocks', []):
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (
+                new_page_id,
+                block.get('type', 'text'),
+                block.get('content', ''),
+                block.get('checked', 0),
+                block.get('position', 0),
+                block.get('collapsed', 0),
+                block.get('details', '')
+            )
+        )
+    
+    # 子ページ追加
+    for i, child in enumerate(page_dict.get('children', [])):
+        create_page_from_dict(cursor, child, parent_id=new_page_id, position=i)
+    
+    return new_page_id
+
+
 def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, position=None, override_icon=None):
     """
     source_page_id を起点にページとブロックを再帰コピーする。
@@ -647,6 +766,246 @@ def upload_file():
         conn.close()
         return jsonify({'success': True, 'file_url': file_url, 'block_type': block_type})
     return jsonify({'error': 'Page ID missing'}), 400
+
+# --- エクスポート/インポート機能 ---
+@app.route('/api/export/all/json', methods=['GET'])
+def export_all_json():
+    """全ページをJSON形式でエクスポート"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM pages WHERE is_deleted = 0 AND parent_id IS NULL ORDER BY position')
+    root_pages = [export_page_to_dict(cursor, row['id']) for row in cursor.fetchall()]
+    conn.close()
+    
+    export_data = {
+        'version': '1.0',
+        'exported_at': datetime.now().isoformat(),
+        'pages': root_pages
+    }
+    
+    response = send_file(
+        io.BytesIO(json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8')),
+        mimetype='application/json',
+        as_attachment=True,
+        download_name=f"diary_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    return response
+
+
+@app.route('/api/export/pages/<int:page_id>/json', methods=['GET'])
+def export_page_json(page_id):
+    """指定ページをJSON形式でエクスポート"""
+    conn = get_db()
+    cursor = conn.cursor()
+    page = export_page_to_dict(cursor, page_id)
+    conn.close()
+    
+    if not page:
+        return jsonify({'error': 'Page not found'}), 404
+    
+    export_data = {
+        'version': '1.0',
+        'exported_at': datetime.now().isoformat(),
+        'page': page
+    }
+    
+    response = send_file(
+        io.BytesIO(json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8')),
+        mimetype='application/json',
+        as_attachment=True,
+        download_name=f"{page.get('title', 'page')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    return response
+
+
+@app.route('/api/export/pages/<int:page_id>/markdown', methods=['GET'])
+def export_page_markdown(page_id):
+    """指定ページをMarkdown形式でエクスポート"""
+    conn = get_db()
+    cursor = conn.cursor()
+    page = export_page_to_dict(cursor, page_id)
+    conn.close()
+    
+    if not page:
+        return jsonify({'error': 'Page not found'}), 404
+    
+    markdown_content = page_to_markdown(page, level=1)
+    
+    response = send_file(
+        io.BytesIO(markdown_content.encode('utf-8')),
+        mimetype='text/markdown',
+        as_attachment=True,
+        download_name=f"{page.get('title', 'page')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    )
+    return response
+
+
+@app.route('/api/export/pages/<int:page_id>/zip', methods=['GET'])
+def export_page_zip(page_id):
+    """指定ページを添付ファイル含めZIP化してエクスポート"""
+    conn = get_db()
+    cursor = conn.cursor()
+    page = export_page_to_dict(cursor, page_id)
+    conn.close()
+    
+    if not page:
+        return jsonify({'error': 'Page not found'}), 404
+    
+    # ZIPファイルをメモリに作成
+    zip_buffer = io.BytesIO()
+    
+    def add_page_to_zip(z, pg, prefix=''):
+        """ページとその子ページを再帰的にZIPに追加"""
+        page_dir = f"{prefix}{pg.get('title', '無題')}_[{pg['id']}]"
+        
+        # Markdownファイル追加
+        md_content = page_to_markdown(pg, level=1)
+        z.writestr(f"{page_dir}/page.md", md_content.encode('utf-8'))
+        
+        # メタデータJSON追加
+        metadata = {
+            'id': pg['id'],
+            'title': pg.get('title', ''),
+            'icon': pg.get('icon', ''),
+            'created_at': pg.get('created_at', ''),
+            'updated_at': pg.get('updated_at', '')
+        }
+        z.writestr(f"{page_dir}/metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2).encode('utf-8'))
+        
+        # 添付ファイルをコピー
+        for block in pg.get('blocks', []):
+            if block.get('type') in ['image', 'file']:
+                file_path = block.get('content', '')
+                if file_path and file_path.startswith('/uploads/'):
+                    filename = file_path.split('/')[-1]
+                    full_path = os.path.join(UPLOAD_FOLDER, filename)
+                    if os.path.exists(full_path):
+                        z.write(full_path, f"{page_dir}/files/{filename}")
+        
+        # 子ページを再帰追加
+        for child in pg.get('children', []):
+            add_page_to_zip(z, child, f"{page_dir}/")
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        add_page_to_zip(zf, page)
+    
+    zip_buffer.seek(0)
+    response = send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"{page.get('title', 'page')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    )
+    return response
+
+
+@app.route('/api/import/json', methods=['POST'])
+def import_json():
+    """JSONファイルをインポート"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '' or not file.filename.endswith('.json'):
+        return jsonify({'error': 'Invalid file format, expected JSON'}), 400
+    
+    try:
+        import_data = json.loads(file.read().decode('utf-8'))
+    except Exception as e:
+        return jsonify({'error': f'Failed to parse JSON: {str(e)}'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        imported_ids = []
+        
+        # "pages"キーがあれば複数ページ、"page"キーがあれば単一ページ
+        pages_to_import = import_data.get('pages', [])
+        if import_data.get('page'):
+            pages_to_import = [import_data.get('page')]
+        
+        for page_dict in pages_to_import:
+            new_id = create_page_from_dict(cursor, page_dict)
+            imported_ids.append(new_id)
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{len(imported_ids)} page(s) imported',
+            'imported_ids': imported_ids
+        })
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
+@app.route('/api/import/zip', methods=['POST'])
+def import_zip():
+    """ZIPファイルをインポート"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '' or not file.filename.endswith('.zip'):
+        return jsonify({'error': 'Invalid file format, expected ZIP'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # ZIPを開く
+        with zipfile.ZipFile(io.BytesIO(file.read()), 'r') as zf:
+            # 最初のmetadata.jsonを見つけて親ページを作成
+            metadata_files = [f for f in zf.namelist() if f.endswith('metadata.json') and f.count('/') == 1]
+            
+            if not metadata_files:
+                return jsonify({'error': 'No valid ZIP structure found'}), 400
+            
+            imported_ids = []
+            
+            for metadata_file in metadata_files:
+                metadata = json.loads(zf.read(metadata_file).decode('utf-8'))
+                
+                # メタデータから新規ページを作成
+                cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+                max_pos = cursor.fetchone()[0]
+                position = (max_pos if max_pos is not None else -1) + 1
+                
+                cursor.execute(
+                    'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                    (metadata.get('title', ''), metadata.get('icon', '📄'), None, position)
+                )
+                new_page_id = cursor.lastrowid
+                imported_ids.append(new_page_id)
+                
+                # ページディレクトリ内のpage.mdを読み込む
+                page_dir = metadata_file.split('/')[0]
+                page_md_path = f"{page_dir}/page.md"
+                
+                if page_md_path in zf.namelist():
+                    md_content = zf.read(page_md_path).decode('utf-8')
+                    # テキストブロックとして最初のブロックに内容を追加
+                    cursor.execute(
+                        "INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', ?, 0)",
+                        (new_page_id, md_content)
+                    )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{len(imported_ids)} page(s) imported from ZIP',
+            'imported_ids': imported_ids
+        })
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'ZIP import failed: {str(e)}'}), 500
 
 # --- Webhook (自動更新用) ---
 @app.route('/webhook_deploy', methods=['POST'])
