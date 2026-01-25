@@ -688,9 +688,10 @@
                 } else if (block.type === 'image') {
                     contentHtml = `<img src="${block.content}" class="max-w-full rounded shadow-sm">`;
                 } else if (block.type === 'todo') {
+                    const escapedTodo = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `
                         <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
-                        <input class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">
+                        <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedTodo}</textarea>
                     `;
                 } else if (block.type === 'toggle') {
                     const escapedTitle = (block.content || '').replace(/"/g, '&quot;');
