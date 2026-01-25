@@ -133,6 +133,27 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def get_or_create_inbox():
+    """'あとで調べる'ページを取得、なければ作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND parent_id IS NULL LIMIT 1', ('🔖 あとで調べる',))
+    inbox = cursor.fetchone()
+    if not inbox:
+        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+        max_pos = cursor.fetchone()[0]
+        new_pos = (max_pos if max_pos is not None else -1) + 1
+        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                       ('🔖 あとで調べる', '🔖', None, new_pos))
+        inbox_id = cursor.lastrowid
+        cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', ?)",
+                       (inbox_id, 1000.0))
+        conn.commit()
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (inbox_id,))
+        inbox = cursor.fetchone()
+    conn.close()
+    return dict(inbox) if inbox else None
+
 def get_next_position(cursor, parent_id):
     """
     次のposition値を計算（1000刻み方式）
@@ -357,6 +378,12 @@ def index():
 def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+@app.route('/api/inbox', methods=['GET'])
+def get_inbox():
+    """'あとで調べる'ページを取得"""
+    inbox = get_or_create_inbox()
+    return jsonify(inbox if inbox else {'error': 'Failed to create inbox'}), 200 if inbox else 500
+
 @app.route('/api/pages', methods=['GET'])
 def get_pages():
     conn = get_db()
@@ -382,6 +409,22 @@ def get_trash():
     trash_pages = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(trash_pages)
+
+@app.route('/api/today-highlights/<int:page_id>', methods=['GET'])
+def get_today_highlights(page_id):
+    """指定ページ内で今日作成されたブロックを取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    cursor.execute('''
+        SELECT * FROM blocks 
+        WHERE page_id = ? AND DATE(created_at) = ?
+        ORDER BY created_at DESC
+        LIMIT 10
+    ''', (page_id, today))
+    highlights = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(highlights)
 
 @app.route('/api/pages', methods=['POST'])
 def create_page():

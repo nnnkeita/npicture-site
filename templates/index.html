@@ -102,9 +102,42 @@
             animation: highlight-flash-dark 0.6s ease-in-out 3;
         }
         
+        html.dark .highlight-block {
+            animation: highlight-flash-dark 0.6s ease-in-out 3;
+        }
+        
         @keyframes highlight-flash-dark {
             0%, 100% { background-color: transparent; }
             50% { background-color: #78350f; }
+        }
+
+        /* あとで調べるボタンのダーク版 */
+        html.dark #inbox-link {
+            background-color: #163e3f !important;
+            color: #67e8f9 !important;
+        }
+
+        html.dark #inbox-link:hover {
+            background-color: #164e3f !important;
+        }
+
+        /* 今日の浮上パネルのダーク版 */
+        html.dark #today-highlights {
+            background: linear-gradient(to right, #0b1f1a, #0d1f1a) !important;
+            border-color: #16a34a !important;
+        }
+
+        html.dark #today-highlights h3 {
+            color: #86efac !important;
+        }
+
+        html.dark #today-highlights-list .bg-white {
+            background-color: #111827 !important;
+            color: #e5e7eb !important;
+        }
+
+        html.dark #today-highlights-list .bg-yellow-50 {
+            background-color: #1f1f0f !important;
         }
         
         /* PC用（768px以上） */
@@ -207,6 +240,13 @@
         <div class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="page-list" oncontextmenu="handleSidebarRightClick(event, null)">
         </div>
 
+        <!-- あとで調べるリンク -->
+        <div class="px-2 py-2 border-t border-gray-200">
+            <button id="inbox-link" onclick="openInbox()" class="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded flex items-center gap-2 bg-blue-50">
+                <span>🔖</span> あとで調べる
+            </button>
+        </div>
+
         <div class="p-2 border-t border-gray-200 space-y-1">
             <button onclick="createPage()" class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded flex items-center">
                 <span class="mr-2">+</span> ページを追加
@@ -265,6 +305,16 @@
                     <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
                         翌日 →
                     </button>
+                </div>
+
+                <!-- 今日の浮上パネル -->
+                <div id="today-highlights" class="hidden mb-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-lg p-4">
+                    <h3 class="font-bold text-yellow-800 mb-3 flex items-center gap-2">
+                        ✨ 今日の浮上
+                    </h3>
+                    <div id="today-highlights-list" class="space-y-2 max-h-40 overflow-y-auto">
+                        <!-- ここに今日のブロックが表示される -->
+                    </div>
                 </div>
                 
                 <div id="blocks" class="space-y-1 pb-10"></div>
@@ -841,6 +891,9 @@
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
             
+            // 今日の浮上パネルを表示
+            loadTodayHighlights();
+            
             renderBlocks(page.blocks);
         }
 
@@ -1246,6 +1299,48 @@
         function exportPageJson() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/json`; closeExportImportMenu(); }
         function exportPageMarkdown() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/markdown`; closeExportImportMenu(); }
         function exportPageZip() { if (!currentPageId) return; window.location.href = `/api/export/pages/${currentPageId}/zip`; closeExportImportMenu(); }
+
+        // --- あとで調べるビュー ---
+        async function openInbox() {
+            const res = await fetch('/api/inbox');
+            const inbox = await res.json();
+            if (inbox && inbox.id) {
+                await loadPage(inbox.id);
+            }
+        }
+
+        // --- 今日の浮上パネル ---
+        async function loadTodayHighlights() {
+            if (!currentPageId) return;
+            
+            const res = await fetch(`/api/today-highlights/${currentPageId}`);
+            const highlights = await res.json();
+            const panel = document.getElementById('today-highlights');
+            const list = document.getElementById('today-highlights-list');
+            
+            if (!highlights || highlights.length === 0) {
+                panel.classList.add('hidden');
+                return;
+            }
+            
+            panel.classList.remove('hidden');
+            list.innerHTML = '';
+            
+            highlights.forEach(block => {
+                const item = document.createElement('div');
+                item.className = 'p-2 bg-white rounded border-l-2 border-yellow-400 hover:bg-yellow-50 cursor-pointer text-sm text-gray-700';
+                item.textContent = block.content.substring(0, 60) + (block.content.length > 60 ? '...' : '');
+                item.onclick = () => {
+                    const blockEl = document.querySelector(`[data-id="${block.id}"]`);
+                    if (blockEl) {
+                        blockEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        blockEl.classList.add('highlight-block');
+                        setTimeout(() => blockEl.classList.remove('highlight-block'), 2000);
+                    }
+                };
+                list.appendChild(item);
+            });
+        }
     </script>
 </body>
 </html>
