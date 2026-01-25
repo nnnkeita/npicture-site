@@ -98,6 +98,24 @@ def allowed_file(filename):
 
 
 # --- ユーティリティ ---
+def mark_tree_deleted(cursor, page_id, is_deleted=True):
+    """
+    ページとその全子ページを再帰的に削除フラグ変更（soft delete）
+    """
+    cursor.execute('UPDATE pages SET is_deleted = ? WHERE id = ?', (1 if is_deleted else 0, page_id))
+    cursor.execute('SELECT id FROM pages WHERE parent_id = ?', (page_id,))
+    for row in cursor.fetchall():
+        mark_tree_deleted(cursor, row['id'], is_deleted)
+
+
+def hard_delete_tree(cursor, page_id):
+    """
+    ページとその全子ページを再帰的に完全削除（hard delete）
+    """
+    cursor.execute('SELECT id FROM pages WHERE parent_id = ?', (page_id,))
+    for row in cursor.fetchall():
+        hard_delete_tree(cursor, row['id'])
+    cursor.execute('DELETE FROM pages WHERE id = ?', (page_id,))
 def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, position=None, override_icon=None):
     """
     source_page_id を起点にページとブロックを再帰コピーする。
@@ -506,7 +524,7 @@ def toggle_pin(page_id):
 def move_to_trash(page_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('UPDATE pages SET is_deleted = 1 WHERE id = ?', (page_id,))
+    mark_tree_deleted(cursor, page_id, is_deleted=True)
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -515,7 +533,7 @@ def move_to_trash(page_id):
 def restore_page(page_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('UPDATE pages SET is_deleted = 0 WHERE id = ?', (page_id,))
+    mark_tree_deleted(cursor, page_id, is_deleted=False)
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -525,7 +543,7 @@ def delete_page(page_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('PRAGMA foreign_keys = ON')
-    cursor.execute('DELETE FROM pages WHERE id = ?', (page_id,))
+    hard_delete_tree(cursor, page_id)
     conn.commit()
     conn.close()
     return jsonify({'success': True})
