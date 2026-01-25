@@ -352,24 +352,43 @@
     </div>
 
     <div id="template-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center" onclick="closeTemplateMenu(event)">
-        <div class="bg-white w-full max-w-md rounded-lg shadow-xl overflow-hidden flex flex-col">
+        <div class="bg-white w-full max-w-lg rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[80vh]" onclick="event.stopPropagation()">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
-                <h2 class="text-xl font-bold text-gray-800">⭐ テンプレートを選択</h2>
+                <h2 class="text-xl font-bold text-gray-800">⭐ テンプレート</h2>
                 <button onclick="closeTemplateMenu()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
-            <div class="p-4 space-y-2">
-                <button onclick="createFromTemplate('daily')" class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-semibold text-gray-700">
-                    📝 今日の記録
-                </button>
-                <button onclick="createFromTemplate('reading')" class="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded border border-green-200 font-semibold text-gray-700">
-                    📚 読書メモ
-                </button>
-                <button onclick="createFromTemplate('meeting')" class="w-full text-left px-4 py-3 bg-orange-50 hover:bg-orange-100 rounded border border-orange-200 font-semibold text-gray-700">
-                    💼 会議メモ
-                </button>
-                <button onclick="createFromTemplate('english')" class="w-full text-left px-4 py-3 bg-purple-50 hover:bg-purple-100 rounded border border-purple-200 font-semibold text-gray-700">
-                    🌍 英語進捗
-                </button>
+            <div class="flex-1 overflow-y-auto">
+                <!-- 組み込みテンプレート -->
+                <div class="p-4 border-b border-gray-200">
+                    <h3 class="text-sm font-bold text-gray-600 mb-2">📋 組み込みテンプレート</h3>
+                    <div class="space-y-2">
+                        <button onclick="createFromTemplate('daily')" class="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 font-semibold text-gray-700">
+                            📝 今日の記録
+                        </button>
+                        <button onclick="createFromTemplate('reading')" class="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded border border-green-200 font-semibold text-gray-700">
+                            📚 読書メモ
+                        </button>
+                        <button onclick="createFromTemplate('meeting')" class="w-full text-left px-4 py-3 bg-orange-50 hover:bg-orange-100 rounded border border-orange-200 font-semibold text-gray-700">
+                            💼 会議メモ
+                        </button>
+                        <button onclick="createFromTemplate('english')" class="w-full text-left px-4 py-3 bg-purple-50 hover:bg-purple-100 rounded border border-purple-200 font-semibold text-gray-700">
+                            🌍 英語進捗
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- カスタムテンプレート -->
+                <div class="p-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-sm font-bold text-gray-600">✨ カスタムテンプレート</h3>
+                        <button id="save-template-btn" onclick="saveCurrentPageAsTemplate()" class="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">
+                            💾 現在のページを保存
+                        </button>
+                    </div>
+                    <div id="custom-templates-list" class="space-y-2">
+                        <!-- カスタムテンプレートがここに表示される -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1049,13 +1068,102 @@
         }
 
         // --- テンプレート機能 ---
-        function showTemplateMenu() {
+        async function showTemplateMenu() {
             document.getElementById('template-modal').classList.remove('hidden');
+            await loadCustomTemplates();
+            updateSaveTemplateButton();
         }
 
         function closeTemplateMenu(e) {
             if (!e || e.target.id === 'template-modal') {
                 document.getElementById('template-modal').classList.add('hidden');
+            }
+        }
+        
+        function updateSaveTemplateButton() {
+            const btn = document.getElementById('save-template-btn');
+            if (currentPageId) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            } else {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+            }
+        }
+
+        async function loadCustomTemplates() {
+            const res = await fetch('/api/templates');
+            const templates = await res.json();
+            const container = document.getElementById('custom-templates-list');
+            
+            if (templates.length === 0) {
+                container.innerHTML = '<div class="text-sm text-gray-400 text-center py-4">カスタムテンプレートはまだありません</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            templates.forEach(template => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded border border-gray-200';
+                div.innerHTML = `
+                    <button onclick="createFromCustomTemplate(${template.id})" class="flex-1 text-left font-semibold text-gray-700">
+                        ${template.icon} ${template.name}
+                    </button>
+                    <button onclick="deleteCustomTemplate(${template.id})" class="text-red-500 hover:text-red-700 text-sm px-2">削除</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function saveCurrentPageAsTemplate() {
+            if (!currentPageId) return;
+            
+            const name = prompt('テンプレート名を入力してください:', document.getElementById('page-title').value || '新しいテンプレート');
+            if (!name) return;
+            
+            try {
+                const res = await fetch(`/api/pages/${currentPageId}/save-as-template`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name })
+                });
+                
+                if (res.ok) {
+                    alert('テンプレートとして保存しました！');
+                    await loadCustomTemplates();
+                } else {
+                    alert('保存に失敗しました');
+                }
+            } catch (e) {
+                alert('エラーが発生しました');
+            }
+        }
+
+        async function createFromCustomTemplate(templateId) {
+            try {
+                const res = await fetch(`/api/pages/from-custom-template/${templateId}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const page = await res.json();
+                closeTemplateMenu();
+                await fetchPages();
+                loadPage(page.id);
+            } catch (e) {
+                alert('テンプレートからの作成に失敗しました');
+            }
+        }
+
+        async function deleteCustomTemplate(templateId) {
+            if (!confirm('このテンプレートを削除しますか？')) return;
+            
+            try {
+                const res = await fetch(`/api/templates/${templateId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    await loadCustomTemplates();
+                }
+            } catch (e) {
+                alert('削除に失敗しました');
             }
         }
 

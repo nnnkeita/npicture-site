@@ -112,6 +112,20 @@ def init_db():
     cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN INSERT INTO blocks_fts(rowid, title, content) VALUES (new.id, (SELECT title FROM pages WHERE id = new.page_id), new.content); END;')
     cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); END;')
     cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); INSERT INTO blocks_fts(rowid, title, content) VALUES (new.id, (SELECT title FROM pages WHERE id = new.page_id), new.content); END;')
+    
+    # テンプレート用テーブル
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        icon TEXT DEFAULT '📋',
+        description TEXT DEFAULT '',
+        content_json TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -1046,6 +1060,184 @@ def import_zip():
         conn.rollback()
         conn.close()
         return jsonify({'error': f'ZIP import failed: {str(e)}'}), 500
+
+# --- テンプレート管理機能 ---
+@app.route('/api/templates', methods=['GET'])
+def get_templates():
+    """テンプレート一覧を取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM templates ORDER BY created_at DESC')
+    templates = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(templates)
+
+@app.route('/api/templates', methods=['POST'])
+def create_template():
+    """新しいテンプレートを作成"""
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        'INSERT INTO templates (name, icon, description, content_json) VALUES (?, ?, ?, ?)',
+        (
+            data.get('name', '新しいテンプレート'),
+            data.get('icon', '📋'),
+            data.get('description', ''),
+            json.dumps(data.get('content', {}), ensure_ascii=False)
+        )
+    )
+    template_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+    template = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(template)
+
+@app.route('/api/templates/<int:template_id>', methods=['PUT'])
+def update_template(template_id):
+    """テンプレートを更新"""
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    updates = []
+    values = []
+    
+    if 'name' in data:
+        updates.append('name = ?')
+        values.append(data['name'])
+    if 'icon' in data:
+        updates.append('icon = ?')
+        values.append(data['icon'])
+    if 'description' in data:
+        updates.append('description = ?')
+        values.append(data['description'])
+    if 'content' in data:
+        updates.append('content_json = ?')
+        values.append(json.dumps(data['content'], ensure_ascii=False))
+    
+    if updates:
+        updates.append('updated_at = CURRENT_TIMESTAMP')
+        values.append(template_id)
+        cursor.execute(f'UPDATE templates SET {', '.join(updates)} WHERE id = ?', values)
+        conn.commit()
+    
+    cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+    template = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(template)
+
+@app.route('/api/templates/<int:template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    """テンプレートを削除"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/pages/from-custom-template/<int:template_id>', methods=['POST'])
+def create_page_from_custom_template(template_id):
+    """カスタムテンプレートからページを作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+    template_row = cursor.fetchone()
+    
+    if not template_row:
+        conn.close()
+        return jsonify({'error': 'Template not found'}), 404
+    
+    template = dict(template_row)
+    content = json.loads(template['content_json'])
+    
+    # 新しいページを作成
+    new_pos = get_next_position(cursor, None)
+    cursor.execute(
+        'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+        (content.get('title', template['name']), template['icon'], None, new_pos)
+    )
+    page_id = cursor.lastrowid
+    
+    # ブロックを追加
+    for i, block in enumerate(content.get('blocks', [])):
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                page_id,
+                block.get('type', 'text'),
+                block.get('content', ''),
+                block.get('checked', 0),
+                (i + 1) * 1000.0,
+                block.get('collapsed', 0),
+                block.get('details', ''),
+                block.get('props', '{}')
+            )
+        )
+    
+    # 子ページを追加
+    for i, child in enumerate(content.get('children', [])):
+        child_pos = (i + 1) * 1000.0
+        cursor.execute(
+            'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+            (child.get('title', ''), child.get('icon', '📄'), page_id, child_pos)
+        )
+        child_id = cursor.lastrowid
+        
+        for j, block in enumerate(child.get('blocks', [])):
+            cursor.execute(
+                'INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)',
+                (child_id, block.get('type', 'text'), block.get('content', ''), block.get('checked', 0), (j + 1) * 1000.0, '{}')
+            )
+    
+    conn.commit()
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(page)
+
+@app.route('/api/pages/<int:page_id>/save-as-template', methods=['POST'])
+def save_page_as_template(page_id):
+    """現在のページをテンプレートとして保存"""
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # ページとブロックを取得
+    page_dict = export_page_to_dict(cursor, page_id)
+    if not page_dict:
+        conn.close()
+        return jsonify({'error': 'Page not found'}), 404
+    
+    # テンプレート用のコンテンツを構築
+    template_content = {
+        'title': page_dict.get('title', ''),
+        'blocks': page_dict.get('blocks', []),
+        'children': page_dict.get('children', [])
+    }
+    
+    # テンプレートを作成
+    cursor.execute(
+        'INSERT INTO templates (name, icon, description, content_json) VALUES (?, ?, ?, ?)',
+        (
+            data.get('name', page_dict.get('title', '新しいテンプレート')),
+            page_dict.get('icon', '📋'),
+            data.get('description', ''),
+            json.dumps(template_content, ensure_ascii=False)
+        )
+    )
+    template_id = cursor.lastrowid
+    conn.commit()
+    
+    cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+    template = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(template)
 
 # --- Webhook (自動更新用) ---
 @app.route('/webhook_deploy', methods=['POST'])
