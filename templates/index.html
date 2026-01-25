@@ -74,6 +74,19 @@
             font-weight: bold;
         }
         
+        /* 日付ナビゲーション */
+        #date-navigation button:hover {
+            background-color: #f3f4f6;
+        }
+        
+        html.dark #date-navigation button:hover {
+            background-color: #1f2937;
+        }
+        
+        html.dark #date-navigation {
+            color: #9ca3af;
+        }
+        
         /* PC用（768px以上） */
         body { 
             display: flex;
@@ -221,7 +234,18 @@
                     <button id="add-cover-trigger" onclick="triggerCoverUpload()" class="mb-2 text-sm text-gray-400 hover:text-gray-600 add-cover-btn hidden">🖼️ カバーを追加</button>
                 </div>
                 
-                <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-8 bg-transparent cursor-text" placeholder="無題" oninput="saveTitle()" onkeydown="handleTitleEnter(event)">
+                <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-4 bg-transparent cursor-text" placeholder="無題" oninput="saveTitle()" onkeydown="handleTitleEnter(event)">
+                
+                <!-- 日付ページナビゲーション -->
+                <div id="date-navigation" class="hidden mb-8 flex items-center justify-between text-sm text-gray-500">
+                    <button onclick="navigateDate(-1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
+                        ← 前日
+                    </button>
+                    <span id="date-display" class="text-gray-400"></span>
+                    <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
+                        翌日 →
+                    </button>
+                </div>
                 
                 <div id="blocks" class="space-y-1 pb-10"></div>
                 
@@ -465,6 +489,54 @@
             const page = await res.json();
             await fetchPages();
             loadPage(page.id);
+        }
+
+        // --- 日付ページナビゲーション機能 ---
+        function checkAndShowDateNavigation(title) {
+            const dateNav = document.getElementById('date-navigation');
+            const dateDisplay = document.getElementById('date-display');
+            
+            // タイトルが「YYYY年M月D日」形式か判定
+            const dateMatch = title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+            
+            if (dateMatch) {
+                const year = parseInt(dateMatch[1]);
+                const month = parseInt(dateMatch[2]);
+                const day = parseInt(dateMatch[3]);
+                
+                // 曜日を取得
+                const date = new Date(year, month - 1, day);
+                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+                const weekday = weekdays[date.getDay()];
+                
+                dateDisplay.innerText = `${year}年${month}月${day}日 (${weekday})`;
+                dateNav.classList.remove('hidden');
+                
+                // 現在の日付情報を保存（ナビゲーション用）
+                dateNav.dataset.year = year;
+                dateNav.dataset.month = month;
+                dateNav.dataset.day = day;
+            } else {
+                dateNav.classList.add('hidden');
+            }
+        }
+
+        async function navigateDate(delta) {
+            const dateNav = document.getElementById('date-navigation');
+            const year = parseInt(dateNav.dataset.year);
+            const month = parseInt(dateNav.dataset.month);
+            const day = parseInt(dateNav.dataset.day);
+            
+            // 前日または翌日の日付を計算
+            const currentDate = new Date(year, month - 1, day);
+            currentDate.setDate(currentDate.getDate() + delta);
+            
+            const newYear = currentDate.getFullYear();
+            const newMonth = currentDate.getMonth() + 1;
+            const newDay = currentDate.getDate();
+            
+            // 日付ページを作成または開く
+            await createPageFromDate(newYear, newMonth, newDay);
         }
 
         // --- 以下、既存の機能 ---
@@ -711,6 +783,10 @@
 
             document.getElementById('page-icon').innerText = page.icon;
             document.getElementById('page-title').value = page.title;
+            
+            // 日付ページかどうか判定してナビゲーション表示
+            checkAndShowDateNavigation(page.title);
+            
             renderBlocks(page.blocks);
         }
 
