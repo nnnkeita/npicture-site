@@ -696,7 +696,7 @@ def search():
     search_query = f"{query}*"
     try:
         sql = '''
-            SELECT blocks.page_id, pages.title as page_title, pages.icon, blocks.content, 
+            SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content, 
                    snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet,
                    pages.parent_id
             FROM blocks_fts

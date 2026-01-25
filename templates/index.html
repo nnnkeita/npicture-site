@@ -87,6 +87,26 @@
             color: #9ca3af;
         }
         
+        /* ブロックハイライトアニメーション */
+        @keyframes highlight-flash {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #fef3c7; }
+        }
+        
+        .highlight-block {
+            animation: highlight-flash 0.6s ease-in-out 3;
+            border-radius: 4px;
+        }
+        
+        html.dark .highlight-block {
+            animation: highlight-flash-dark 0.6s ease-in-out 3;
+        }
+        
+        @keyframes highlight-flash-dark {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #78350f; }
+        }
+        
         /* PC用（768px以上） */
         body { 
             display: flex;
@@ -929,7 +949,14 @@
             results.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'p-2 hover:bg-gray-100 rounded cursor-pointer border-b border-gray-100';
-                div.onclick = () => { loadPage(item.page_id); document.getElementById('search-modal').classList.add('hidden'); };
+                div.onclick = async () => {
+                    await loadPage(item.page_id);
+                    document.getElementById('search-modal').classList.add('hidden');
+                    // 該当ブロックまでスクロール＋ハイライト
+                    if (item.block_id) {
+                        setTimeout(() => scrollToBlock(item.block_id), 100);
+                    }
+                };
                 
                 // パンくずを構築
                 let breadcrumbHtml = '';
@@ -946,6 +973,18 @@
             });
         }
         document.addEventListener('keydown', e => { if((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearch(); } });
+
+        function scrollToBlock(blockId) {
+            const blockElement = document.querySelector(`[data-id="${blockId}"]`);
+            if (!blockElement) return;
+            
+            // スクロール
+            blockElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // ハイライトアニメーション（3回点滅）
+            blockElement.classList.add('highlight-block');
+            setTimeout(() => blockElement.classList.remove('highlight-block'), 2000);
+        }
 
         // --- ゴミ箱機能 ---
         async function showTrash() {
