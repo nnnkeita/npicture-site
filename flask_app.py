@@ -6,7 +6,7 @@ import os
 from werkzeug.utils import secure_filename
 import uuid
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- パス設定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +96,72 @@ def init_db():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+# --- ユーティリティ ---
+def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, position=None, override_icon=None):
+    """
+    source_page_id を起点にページとブロックを再帰コピーする。
+    new_title/new_parent_id/position/override_icon はルートページの上書き用。
+    """
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (source_page_id,))
+    source_page = cursor.fetchone()
+    if not source_page:
+        return None
+
+    src = dict(source_page)
+    parent_id = new_parent_id if new_parent_id is not None else src['parent_id']
+
+    # 位置は指定がなければ末尾に追加
+    if position is None:
+        if parent_id:
+            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
+        else:
+            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+        max_pos = cursor.fetchone()[0]
+        position = (max_pos if max_pos is not None else -1) + 1
+
+    cursor.execute(
+        'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, 0)',
+        (
+            new_title if new_title is not None else src.get('title', ''),
+            override_icon if override_icon is not None else src.get('icon', '📄'),
+            src.get('cover_image', ''),
+            parent_id,
+            position,
+            src.get('is_pinned', 0)
+        )
+    )
+    new_page_id = cursor.lastrowid
+
+    # ブロックコピー
+    cursor.execute('SELECT * FROM blocks WHERE page_id = ? ORDER BY position', (source_page_id,))
+    for block in cursor.fetchall():
+        block_dict = dict(block)
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (
+                new_page_id,
+                block_dict.get('type', 'text'),
+                block_dict.get('content', ''),
+                block_dict.get('checked', 0),
+                block_dict.get('position', 0),
+                block_dict.get('collapsed', 0),
+                block_dict.get('details', '')
+            )
+        )
+
+    # 子ページを再帰コピー
+    cursor.execute('SELECT * FROM pages WHERE parent_id = ? ORDER BY position', (source_page_id,))
+    for child in cursor.fetchall():
+        copy_page_tree(
+            cursor,
+            child['id'],
+            new_parent_id=new_page_id,
+            position=child['position']
+        )
+
+    return new_page_id
+
 # --- ルーティング ---
 
 @app.route('/')
@@ -162,22 +228,41 @@ def create_page_from_date():
     if not date_str: return jsonify({'error': 'Date required'}), 400
 
     # 日付形式を日本語タイトルに変換 (例: 2026-01-24 -> 2026年1月24日)
+    target_date = None
     try:
-        y, m, d = date_str.split('-')
-        title = f"{y}年{int(m)}月{int(d)}日"
-    except:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d')
+        title = f"{target_date.year}年{target_date.month}月{target_date.day}日"
+    except Exception:
         title = date_str
 
     conn = get_db()
     cursor = conn.cursor()
-    
-    # 既に同じタイトルのページがあるか確認（オプション）
-    # cursor.execute('SELECT * FROM pages WHERE title = ?', (title,))
-    # existing = cursor.fetchone()
-    # if existing:
-    #     conn.close()
-    #     return jsonify(dict(existing))
 
+    # 同じタイトルのページがあれば再利用
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND is_deleted = 0 LIMIT 1', (title,))
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        return jsonify(dict(existing))
+
+    # 前日ページがあればコピー
+    previous_page_id = None
+    if target_date:
+        prev_date = target_date - timedelta(days=1)
+        prev_title = f"{prev_date.year}年{prev_date.month}月{prev_date.day}日"
+        cursor.execute('SELECT id FROM pages WHERE title = ? AND is_deleted = 0 ORDER BY created_at DESC LIMIT 1', (prev_title,))
+        prev_row = cursor.fetchone()
+        if prev_row:
+            previous_page_id = prev_row['id']
+
+    if previous_page_id:
+        new_page_id = copy_page_tree(cursor, previous_page_id, new_title=title, new_parent_id=None, override_icon='📅')
+        conn.commit()
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
+        page = dict(cursor.fetchone())
+        conn.close()
+        return jsonify(page)
+    
     # 親なし(ルート)で作成
     cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
     max_pos = cursor.fetchone()[0]
