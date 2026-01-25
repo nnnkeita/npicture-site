@@ -43,7 +43,7 @@ def init_db():
         icon TEXT DEFAULT '📄',
         cover_image TEXT DEFAULT '', 
         parent_id INTEGER,
-        position INTEGER DEFAULT 0,
+        position REAL DEFAULT 0.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (parent_id) REFERENCES pages(id) ON DELETE CASCADE
@@ -77,6 +77,21 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     
+    # position を REAL に変更（既存インデックスの衝突を防ぐ）
+    try:
+        cursor.execute("ALTER TABLE pages ADD COLUMN position_new REAL DEFAULT 0.0")
+        cursor.execute("UPDATE pages SET position_new = CAST(position AS REAL) * 1000.0")
+        cursor.execute("ALTER TABLE pages DROP COLUMN position")
+        cursor.execute("ALTER TABLE pages RENAME COLUMN position_new TO position")
+    except sqlite3.OperationalError:
+        pass
+    
+    # props JSON カラムをブロックに追加
+    try:
+        cursor.execute("ALTER TABLE blocks ADD COLUMN props TEXT DEFAULT '{}'")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,21 +99,49 @@ def init_db():
         type TEXT DEFAULT 'text',
         content TEXT DEFAULT '',
         checked BOOLEAN DEFAULT 0,
-        position INTEGER DEFAULT 0,
+        position REAL DEFAULT 0.0,
+        collapsed BOOLEAN DEFAULT 0,
+        details TEXT DEFAULT '',
+        props TEXT DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
     )
     ''')
-    cursor.execute('CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(content, content=blocks, content_rowid=id)')
-    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END;')
-    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES("delete", old.id, old.content); END;')
-    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES("delete", old.id, old.content); INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END;')
+    cursor.execute('CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(title, content, content=blocks, content_rowid=id)')
+    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN INSERT INTO blocks_fts(rowid, title, content) VALUES (new.id, (SELECT title FROM pages WHERE id = new.page_id), new.content); END;')
+    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); END;')
+    cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); INSERT INTO blocks_fts(rowid, title, content) VALUES (new.id, (SELECT title FROM pages WHERE id = new.page_id), new.content); END;')
     conn.commit()
     conn.close()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_next_position(cursor, parent_id):
+    """
+    次のposition値を計算（1000刻み方式）
+    """
+    if parent_id:
+        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
+    else:
+        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+    max_pos = cursor.fetchone()[0]
+    if max_pos is None:
+        return 1000.0
+    return max_pos + 1000.0
+
+
+def get_block_next_position(cursor, page_id):
+    """
+    ブロックの次のposition値を計算
+    """
+    cursor.execute('SELECT MAX(position) FROM blocks WHERE page_id = ?', (page_id,))
+    max_pos = cursor.fetchone()[0]
+    if max_pos is None:
+        return 1000.0
+    return max_pos + 1000.0
 
 
 # --- ユーティリティ ---
@@ -192,12 +235,7 @@ def create_page_from_dict(cursor, page_dict, parent_id=None, position=None):
     parent_id = parent_id if parent_id is not None else page_dict.get('parent_id')
     
     if position is None:
-        if parent_id:
-            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
-        else:
-            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-        max_pos = cursor.fetchone()[0]
-        position = (max_pos if max_pos is not None else -1) + 1
+        position = get_next_position(cursor, parent_id)
     
     cursor.execute(
         'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -222,15 +260,17 @@ def create_page_from_dict(cursor, page_dict, parent_id=None, position=None):
                 block.get('type', 'text'),
                 block.get('content', ''),
                 block.get('checked', 0),
-                block.get('position', 0),
+                block.get('position', 1000.0) if isinstance(block.get('position'), int) else block.get('position', 1000.0),
                 block.get('collapsed', 0),
-                block.get('details', '')
+                block.get('details', ''),
+                block.get('props', '{}')
             )
         )
     
     # 子ページ追加
     for i, child in enumerate(page_dict.get('children', [])):
-        create_page_from_dict(cursor, child, parent_id=new_page_id, position=i)
+        child_pos = (i + 1) * 1000.0
+        create_page_from_dict(cursor, child, parent_id=new_page_id, position=child_pos)
     
     return new_page_id
 
@@ -247,15 +287,9 @@ def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, p
 
     src = dict(source_page)
     parent_id = new_parent_id if new_parent_id is not None else src['parent_id']
-
     # 位置は指定がなければ末尾に追加
     if position is None:
-        if parent_id:
-            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
-        else:
-            cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-        max_pos = cursor.fetchone()[0]
-        position = (max_pos if max_pos is not None else -1) + 1
+        position = get_next_position(cursor, parent_id)
 
     cursor.execute(
         'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, 0)',
@@ -341,16 +375,11 @@ def create_page():
     conn = get_db()
     cursor = conn.cursor()
     parent_id = data.get('parent_id')
-    if parent_id:
-        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
-    else:
-        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-    max_pos = cursor.fetchone()[0]
-    new_pos = (max_pos if max_pos is not None else -1) + 1
+    new_pos = get_next_position(cursor, parent_id)
     cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
                    (data.get('title', ''), data.get('icon', '📄'), parent_id, new_pos))
     page_id = cursor.lastrowid
-    cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', 0)", (page_id,))
+    cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', ?)", (page_id, get_block_next_position(cursor, page_id)))
     conn.commit()
     cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
     page = dict(cursor.fetchone())
@@ -401,16 +430,14 @@ def create_page_from_date():
         return jsonify(page)
     
     # 親なし(ルート)で作成
-    cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-    max_pos = cursor.fetchone()[0]
-    new_pos = (max_pos if max_pos is not None else -1) + 1
+    new_pos = get_next_position(cursor, None)
     
     cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
                    (title, '📅', None, new_pos))
     page_id = cursor.lastrowid
 
     # 親ページにデフォルトのテキストブロック
-    cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', 0)", (page_id,))
+    cursor.execute("INSERT INTO blocks (page_id, type, content, position, props) VALUES (?, 'text', '', ?, ?)", (page_id, 1000.0, '{}'))
 
     # 子ページ（ツリー）を自動生成: 日記 / 筋トレ / 英語学習
     children_templates = [
@@ -459,15 +486,15 @@ def create_page_from_date():
     ]
 
     for i, child in enumerate(children_templates):
-        # 子ページの並び順は0,1,2...
+        # 子ページの並び順は1000, 2000, 3000...
         cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
-                       (child['title'], child['icon'], page_id, i))
+                       (child['title'], child['icon'], page_id, (i + 1) * 1000.0))
         child_id = cursor.lastrowid
         # 子ページのブロック追加
         for j, block in enumerate(child['blocks']):
             cursor.execute(
-                "INSERT INTO blocks (page_id, type, content, checked, position) VALUES (?, ?, ?, ?, ?)",
-                (child_id, block['type'], block.get('content', ''), block.get('checked', 0), j)
+                "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
+                (child_id, block['type'], block.get('content', ''), block.get('checked', 0), (j + 1) * 1000.0, '{}')
             )
 
     conn.commit()
@@ -482,12 +509,7 @@ def create_folder():
     conn = get_db()
     cursor = conn.cursor()
     parent_id = data.get('parent_id')
-    if parent_id:
-        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id = ?', (parent_id,))
-    else:
-        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-    max_pos = cursor.fetchone()[0]
-    new_pos = (max_pos if max_pos is not None else -1) + 1
+    new_pos = get_next_position(cursor, parent_id)
     cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
                    (data.get('title', '新しいフォルダ'), '📁', parent_id, new_pos))
     folder_id = cursor.lastrowid
@@ -569,9 +591,7 @@ def create_page_from_template():
     
     template = templates.get(template_type, templates['daily'])
     
-    cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
-    max_pos = cursor.fetchone()[0]
-    new_pos = (max_pos if max_pos is not None else -1) + 1
+    new_pos = get_next_position(cursor, None)
     
     cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
                    (template['title'], template['icon'], None, new_pos))
@@ -580,8 +600,8 @@ def create_page_from_template():
     # ブロックを追加
     for i, block in enumerate(template['blocks']):
         cursor.execute(
-            "INSERT INTO blocks (page_id, type, content, checked, position) VALUES (?, ?, ?, ?, ?)",
-            (page_id, block['type'], block['content'], block.get('checked', 0), i)
+            "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
+            (page_id, block['type'], block['content'], block.get('checked', 0), (i + 1) * 1000.0, '{}')
         )
     
     conn.commit()
@@ -676,7 +696,9 @@ def search():
     search_query = f"{query}*"
     try:
         sql = '''
-            SELECT blocks.page_id, pages.title as page_title, blocks.content, snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet
+            SELECT blocks.page_id, pages.title as page_title, pages.icon, blocks.content, 
+                   snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet,
+                   pages.parent_id
             FROM blocks_fts
             JOIN blocks ON blocks_fts.rowid = blocks.id
             JOIN pages ON blocks.page_id = pages.id
@@ -686,7 +708,26 @@ def search():
         '''
         cursor.execute(sql, (search_query,))
         results = [dict(row) for row in cursor.fetchall()]
-    except:
+        
+        # 各結果にパンくず（祖先パス）を追加
+        for result in results:
+            breadcrumb = []
+            current_id = result.get('parent_id')
+            while current_id:
+                cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
+                parent_row = cursor.fetchone()
+                if parent_row:
+                    parent_dict = dict(parent_row)
+                    breadcrumb.insert(0, {
+                        'id': parent_dict['id'],
+                        'title': parent_dict['title'],
+                        'icon': parent_dict['icon']
+                    })
+                    current_id = parent_dict['parent_id']
+                else:
+                    break
+            result['breadcrumb'] = breadcrumb
+    except Exception as e:
         results = []
     conn.close()
     return jsonify(results)
@@ -696,10 +737,9 @@ def create_block(page_id):
     data = request.json
     conn = get_db()
     cursor = conn.cursor()
-    position = data.get('position', 0)
-    cursor.execute('UPDATE blocks SET position = position + 1 WHERE page_id = ? AND position >= ?', (page_id, position))
-    cursor.execute('INSERT INTO blocks (page_id, type, content, checked, position) VALUES (?, ?, ?, ?, ?)',
-                   (page_id, data.get('type', 'text'), data.get('content', ''), data.get('checked', False), position))
+    new_pos = get_block_next_position(cursor, page_id)
+    cursor.execute('INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)',
+                   (page_id, data.get('type', 'text'), data.get('content', ''), data.get('checked', False), new_pos, data.get('props', '{}')))
     block_id = cursor.lastrowid
     conn.commit()
     cursor.execute('SELECT * FROM blocks WHERE id = ?', (block_id,))
