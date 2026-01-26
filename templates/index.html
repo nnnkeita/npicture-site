@@ -473,6 +473,8 @@
         let selectedPageIds = new Set(); // 複数選択用
         let lastSelectedId = null; // Shiftレンジの基準
         let visiblePageOrder = []; // 現在表示中の順序（フラット）
+        let currentBlocks = [];
+        let focusedBlockId = null;
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -534,6 +536,10 @@
             // 起動時に今日のページを自動で開く
             openTodayPage();
         });
+
+        function setFocusedBlock(id) {
+            focusedBlockId = id;
+        }
 
         // --- カレンダー機能 ---
         function renderCalendar() {
@@ -724,6 +730,20 @@
         function autoResizeTextarea(textarea) {
             textarea.style.height = 'auto';
             textarea.style.height = Math.max(textarea.scrollHeight, 24) + 'px';
+        }
+
+        function computeInsertPosition() {
+            if (!currentBlocks || currentBlocks.length === 0) return null;
+            if (!focusedBlockId) return null;
+            const sorted = currentBlocks.slice().sort((a, b) => a.position - b.position);
+            const idx = sorted.findIndex(b => b.id === focusedBlockId);
+            if (idx === -1) return null;
+            const currentPos = sorted[idx].position;
+            const next = sorted[idx + 1];
+            if (next) {
+                return (currentPos + next.position) / 2;
+            }
+            return currentPos + 1000;
         }
 
         function parseBlockProps(props) {
@@ -973,7 +993,8 @@
             // 今日の浮上パネルを表示
             loadTodayHighlights();
             
-            renderBlocks(page.blocks);
+            currentBlocks = (page.blocks || []).slice().sort((a, b) => a.position - b.position);
+            renderBlocks(currentBlocks);
         }
 
         function renderBlocks(blocks) {
@@ -983,17 +1004,18 @@
                 const div = document.createElement('div');
                 div.className = 'block-row group flex items-start gap-2 py-1 relative';
                 div.dataset.id = block.id;
+                div.dataset.position = block.position;
                 const handle = `<div class="drag-handle hover:bg-gray-200 rounded">⋮⋮</div>`;
                 let contentHtml = '';
                 if (block.type === 'h1') {
-                    contentHtml = `<input class="text-3xl font-bold w-full border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">`;
+                    contentHtml = `<input class="text-3xl font-bold w-full border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value)">`;
                 } else if (block.type === 'image') {
                     contentHtml = `<img src="${block.content}" class="max-w-full rounded shadow-sm">`;
                 } else if (block.type === 'todo') {
                     const escapedTodo = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `
                         <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
-                        <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedTodo}</textarea>
+                        <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedTodo}</textarea>
                     `;
                 } else if (block.type === 'calorie') {
                     const escapedCalorie = (block.content || '').replace(/</g, '&lt;');
@@ -1005,11 +1027,11 @@
                             <div class="flex items-center justify-between text-sm text-gray-600 mb-2 gap-2">
                                 <div class="flex items-center gap-2 flex-1">
                                     <span class="font-semibold">🍽️</span>
-                                    <input id="cal-title-${block.id}" class="flex-1 border-none focus:ring-0 bg-transparent text-base font-semibold" value="${heading}" placeholder="食事/カロリー" oninput="updateCalorieTitle(${block.id}, this.value)">
+                                    <input id="cal-title-${block.id}" class="flex-1 border-none focus:ring-0 bg-transparent text-base font-semibold" value="${heading}" placeholder="食事/カロリー" onfocus="setFocusedBlock(${block.id})" oninput="updateCalorieTitle(${block.id}, this.value)">
                                 </div>
                                 <div class="text-xs text-gray-500 whitespace-nowrap">合計: <span id="cal-total-${block.id}" class="font-bold text-gray-700">${props.total_kcal !== undefined ? props.total_kcal + ' kcal' : '-'}</span></div>
                             </div>
-                            <textarea class="w-full border border-green-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="1行に1つずつ入力\n例: 朝食: ご飯 1杯\n昼食: そば 1人前" oninput="handleCalorieInput(${block.id}, this.value); autoResizeTextarea(this)">${escapedCalorie}</textarea>
+                            <textarea class="w-full border border-green-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="1行に1つずつ入力\n例: 朝食: ご飯 1杯\n昼食: そば 1人前" onfocus="setFocusedBlock(${block.id})" oninput="handleCalorieInput(${block.id}, this.value); autoResizeTextarea(this)">${escapedCalorie}</textarea>
                             <div id="cal-items-${block.id}" class="mt-2 text-xs text-gray-600 space-y-1"></div>
                             <div class="text-[11px] text-gray-400 mt-1">※ 目安の計算です。食材や調理法で変わります。</div>
                         </div>
@@ -1021,16 +1043,16 @@
                         <details ${block.collapsed ? '' : 'open'} class="w-full" onchange="handleToggleChange(this, ${block.id})">
                             <summary class="cursor-pointer font-semibold list-none flex items-center gap-2 select-none hover:bg-gray-50 rounded p-1">
                                 <span>▶</span>
-                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedTitle}" placeholder="トグルタイトル..." oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()" />
+                                <input type="text" class="flex-1 border-none focus:ring-0 bg-transparent cursor-text" value="${escapedTitle}" placeholder="トグルタイトル..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value)" onclick="event.stopPropagation()" />
                             </summary>
                             <div class="ml-6 mt-2 pl-2 border-l-2 border-gray-200">
-                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." oninput="updateBlock(${block.id}, 'details', this.value); autoResizeTextarea(this)">${escapedDetails}</textarea>
+                                <textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="内容..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'details', this.value); autoResizeTextarea(this)">${escapedDetails}</textarea>
                             </div>
                         </details>
                     `;
                 } else {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
-                    contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
+                    contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
                 }
                 const deleteBtn = `<button onclick="deleteBlock(${block.id})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 p-1">×</button>`;
                 div.innerHTML = handle + contentHtml + deleteBtn;
@@ -1093,8 +1115,12 @@
         }
         async function addBlock(type = 'text') {
             if (!currentPageId) return;
-            await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type: type }) });
-            loadPage(currentPageId);
+            const position = computeInsertPosition();
+            const res = await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type, position }) });
+            const block = await res.json();
+            // 極力シームレスに反映（再読込せずに反映）
+            currentBlocks = (currentBlocks || []).concat(block).sort((a, b) => a.position - b.position);
+            renderBlocks(currentBlocks);
         }
         function updateBlock(id, key, value) {
             clearTimeout(typingTimer);

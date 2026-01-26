@@ -915,7 +915,10 @@ def create_block(page_id):
     data = request.json
     conn = get_db()
     cursor = conn.cursor()
-    new_pos = get_block_next_position(cursor, page_id)
+    if data.get('position') is not None:
+        new_pos = float(data.get('position'))
+    else:
+        new_pos = get_block_next_position(cursor, page_id)
     cursor.execute('INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)',
                    (page_id, data.get('type', 'text'), data.get('content', ''), data.get('checked', False), new_pos, data.get('props', '{}')))
     block_id = cursor.lastrowid
