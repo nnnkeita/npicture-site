@@ -144,7 +144,7 @@
         body { 
             display: flex;
             height: 100vh;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         #sidebar { 
@@ -735,6 +735,8 @@
             }
         }
 
+        const caloriePropsCache = {};
+
         function renderCalorieResult(blockId, data) {
             const totalEl = document.getElementById(`cal-total-${blockId}`);
             if (totalEl) {
@@ -772,16 +774,30 @@
                     body: JSON.stringify({ lines: value })
                 });
                 const data = await res.json();
-                renderCalorieResult(blockId, data);
+                const currentProps = caloriePropsCache[blockId] || {};
+                const merged = { ...currentProps, ...data };
+                caloriePropsCache[blockId] = merged;
+                renderCalorieResult(blockId, merged);
                 await fetch(`/api/blocks/${blockId}`, {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ props: JSON.stringify(data) })
+                    body: JSON.stringify({ props: JSON.stringify(merged) })
                 });
             } catch (e) {
                 const totalEl = document.getElementById(`cal-total-${blockId}`);
                 if (totalEl) totalEl.textContent = '計算エラー';
             }
+        }
+
+        async function updateCalorieTitle(blockId, title) {
+            const currentProps = caloriePropsCache[blockId] || {};
+            const merged = { ...currentProps, title };
+            caloriePropsCache[blockId] = merged;
+            await fetch(`/api/blocks/${blockId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ props: JSON.stringify(merged) })
+            });
         }
 
         // トグルの開閉状態を保存
@@ -982,13 +998,18 @@
                 } else if (block.type === 'calorie') {
                     const escapedCalorie = (block.content || '').replace(/</g, '&lt;');
                     const props = parseBlockProps(block.props);
+                    caloriePropsCache[block.id] = props;
+                    const heading = props.title || '食事/カロリー';
                     contentHtml = `
                         <div class="w-full border border-green-200 bg-white rounded-lg p-3 shadow-sm">
-                            <div class="flex items-center justify-between text-sm text-gray-600 mb-2">
-                                <div class="font-semibold flex items-center gap-2">🍽️ 食事/カロリー</div>
-                                <div class="text-xs text-gray-500">合計: <span id="cal-total-${block.id}" class="font-bold text-gray-700">${props.total_kcal !== undefined ? props.total_kcal + ' kcal' : '-'}</span></div>
+                            <div class="flex items-center justify-between text-sm text-gray-600 mb-2 gap-2">
+                                <div class="flex items-center gap-2 flex-1">
+                                    <span class="font-semibold">🍽️</span>
+                                    <input id="cal-title-${block.id}" class="flex-1 border-none focus:ring-0 bg-transparent text-base font-semibold" value="${heading}" placeholder="食事/カロリー" oninput="updateCalorieTitle(${block.id}, this.value)">
+                                </div>
+                                <div class="text-xs text-gray-500 whitespace-nowrap">合計: <span id="cal-total-${block.id}" class="font-bold text-gray-700">${props.total_kcal !== undefined ? props.total_kcal + ' kcal' : '-'}</span></div>
                             </div>
-                            <textarea class="w-full border border-green-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="1行に1つずつ入力\n例: ご飯 1杯\n納豆 1パック" oninput="handleCalorieInput(${block.id}, this.value); autoResizeTextarea(this)">${escapedCalorie}</textarea>
+                            <textarea class="w-full border border-green-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="1行に1つずつ入力\n例: 朝食: ご飯 1杯\n昼食: そば 1人前" oninput="handleCalorieInput(${block.id}, this.value); autoResizeTextarea(this)">${escapedCalorie}</textarea>
                             <div id="cal-items-${block.id}" class="mt-2 text-xs text-gray-600 space-y-1"></div>
                             <div class="text-[11px] text-gray-400 mt-1">※ 目安の計算です。食材や調理法で変わります。</div>
                         </div>
