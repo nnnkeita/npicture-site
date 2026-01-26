@@ -734,23 +734,40 @@
 
         function computeInsertPosition() {
             if (!currentBlocks || currentBlocks.length === 0) return null;
-            
-            // リアルタイムで現在フォーカスされている要素を検出
+
+            // 直近でフォーカスしたブロックと、実際の入力要素のキャレット位置を確認
             let targetBlockId = focusedBlockId;
+            let insertBefore = false;
             const activeElement = document.activeElement;
             if (activeElement) {
                 const blockRow = activeElement.closest('.block-row');
                 if (blockRow && blockRow.dataset.id) {
                     targetBlockId = parseInt(blockRow.dataset.id);
+                    // キャレットが先頭にある場合は「前に挿入」扱いにする
+                    if (activeElement.selectionStart !== undefined && activeElement.selectionEnd !== undefined) {
+                        const caretAtStart = activeElement.selectionStart === 0 && activeElement.selectionEnd === 0;
+                        if (caretAtStart) {
+                            insertBefore = true;
+                        }
+                    }
                 }
             }
-            
+
             if (!targetBlockId) return null;
-            
+
             const sorted = currentBlocks.slice().sort((a, b) => a.position - b.position);
             const idx = sorted.findIndex(b => b.id === targetBlockId);
             if (idx === -1) return null;
             const currentPos = sorted[idx].position;
+
+            if (insertBefore) {
+                const prev = sorted[idx - 1];
+                if (prev) {
+                    return (prev.position + currentPos) / 2;
+                }
+                return currentPos - 1000;
+            }
+
             const next = sorted[idx + 1];
             if (next) {
                 return (currentPos + next.position) / 2;
