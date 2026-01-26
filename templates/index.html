@@ -734,9 +734,21 @@
 
         function computeInsertPosition() {
             if (!currentBlocks || currentBlocks.length === 0) return null;
-            if (!focusedBlockId) return null;
+            
+            // リアルタイムで現在フォーカスされている要素を検出
+            let targetBlockId = focusedBlockId;
+            const activeElement = document.activeElement;
+            if (activeElement) {
+                const blockRow = activeElement.closest('.block-row');
+                if (blockRow && blockRow.dataset.id) {
+                    targetBlockId = parseInt(blockRow.dataset.id);
+                }
+            }
+            
+            if (!targetBlockId) return null;
+            
             const sorted = currentBlocks.slice().sort((a, b) => a.position - b.position);
-            const idx = sorted.findIndex(b => b.id === focusedBlockId);
+            const idx = sorted.findIndex(b => b.id === targetBlockId);
             if (idx === -1) return null;
             const currentPos = sorted[idx].position;
             const next = sorted[idx + 1];
@@ -1116,11 +1128,23 @@
         async function addBlock(type = 'text') {
             if (!currentPageId) return;
             const position = computeInsertPosition();
-            const res = await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type, position }) });
+            const payload = { type };
+            if (position !== null && position !== undefined) {
+                payload.position = position;
+            }
+            const res = await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
             const block = await res.json();
             // 極力シームレスに反映（再読込せずに反映）
             currentBlocks = (currentBlocks || []).concat(block).sort((a, b) => a.position - b.position);
             renderBlocks(currentBlocks);
+            // 新しく追加されたブロックにフォーカス
+            setTimeout(() => {
+                const newBlockEl = document.querySelector(`[data-id="${block.id}"]`);
+                if (newBlockEl) {
+                    const input = newBlockEl.querySelector('textarea, input[type="text"]');
+                    if (input) input.focus();
+                }
+            }, 50);
         }
         function updateBlock(id, key, value) {
             clearTimeout(typingTimer);
