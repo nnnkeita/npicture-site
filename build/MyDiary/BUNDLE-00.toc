@@ -1,0 +1,3 @@
+([('MyDiary',
+   '/Users/nishiharakeita/npicture-site/dist/MyDiary',
+   'EXECUTABLE')],)

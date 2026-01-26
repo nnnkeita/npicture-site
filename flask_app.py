@@ -2,6 +2,7 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 import sqlite3
 import json
+import re
 import os
 from werkzeug.utils import secure_filename
 import uuid
@@ -131,6 +132,95 @@ def init_db():
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# --- カロリー計算の簡易データベース ---
+# 値はおおよその目安。実際の食材・分量とは異なる可能性がある。
+CALORIE_TABLE = [
+    {'label': 'ご飯', 'keywords': ['ご飯', '白米', 'ライス'], 'kcal': 240, 'unit': '1杯(150g)'},
+    {'label': '納豆', 'keywords': ['納豆'], 'kcal': 100, 'unit': '1パック'},
+    {'label': 'パン', 'keywords': ['食パン', 'パン'], 'kcal': 180, 'unit': '1枚(6枚切)'},
+    {'label': 'プロテイン', 'keywords': ['プロテイン'], 'kcal': 120, 'unit': '1杯(30g)'},
+    {'label': '弁当', 'keywords': ['弁当'], 'kcal': 500, 'unit': '1個'},
+    {'label': '卵', 'keywords': ['卵', 'たまご'], 'kcal': 80, 'unit': '1個'},
+    {'label': '鶏むね肉', 'keywords': ['鶏むね', '鶏胸', 'ささみ'], 'kcal': 165, 'unit': '100g', 'per_grams': 100},
+    {'label': '豚肉', 'keywords': ['豚肉'], 'kcal': 250, 'unit': '100g', 'per_grams': 100},
+    {'label': '牛肉', 'keywords': ['牛肉'], 'kcal': 280, 'unit': '100g', 'per_grams': 100},
+    {'label': '豆腐', 'keywords': ['豆腐'], 'kcal': 140, 'unit': '1丁(300g)', 'per_grams': 300},
+    {'label': 'ヨーグルト', 'keywords': ['ヨーグルト'], 'kcal': 60, 'unit': '100g', 'per_grams': 100},
+    {'label': 'バナナ', 'keywords': ['バナナ'], 'kcal': 90, 'unit': '1本'},
+    {'label': 'そば', 'keywords': ['そば', '蕎麦'], 'kcal': 320, 'unit': '1人前'},
+    {'label': 'うどん', 'keywords': ['うどん'], 'kcal': 280, 'unit': '1人前'},
+    {'label': 'パスタ', 'keywords': ['パスタ', 'スパゲッティ'], 'kcal': 350, 'unit': '1人前'},
+    {'label': '牛乳', 'keywords': ['牛乳', 'ミルク'], 'kcal': 130, 'unit': '200ml', 'per_ml': 200},
+    {'label': 'サラダ', 'keywords': ['サラダ'], 'kcal': 80, 'unit': '1皿'},
+]
+
+
+def _extract_number(text, pattern):
+    match = re.search(pattern, text)
+    return float(match.group(1)) if match else None
+
+
+def estimate_calories(lines):
+    """行ごとのメニュー文字列から概算カロリーを計算"""
+    results = []
+    total_kcal = 0.0
+
+    for raw in lines:
+        line = (raw or '').strip()
+        if not line:
+            continue
+
+        matched_entry = None
+        for entry in CALORIE_TABLE:
+            if any(keyword in line for keyword in entry['keywords']):
+                matched_entry = entry
+                break
+
+        amount = _extract_number(line, r'(\d+(?:\.\d+)?)') or 1.0
+        gram_val = _extract_number(line, r'(\d+(?:\.\d+)?)\s*(?:g|グラム)')
+        ml_val = _extract_number(line, r'(\d+(?:\.\d+)?)\s*(?:ml|mL|ML|㎖)')
+
+        if matched_entry:
+            kcal = matched_entry['kcal']
+            unit = matched_entry.get('unit', '1食')
+
+            if matched_entry.get('per_grams'):
+                grams = gram_val if gram_val is not None else matched_entry['per_grams'] * amount
+                kcal_total = (grams / matched_entry['per_grams']) * matched_entry['kcal']
+                amount_label = f"{grams:.0f}g"
+            elif matched_entry.get('per_ml'):
+                ml = ml_val if ml_val is not None else matched_entry['per_ml'] * amount
+                kcal_total = (ml / matched_entry['per_ml']) * matched_entry['kcal']
+                amount_label = f"{ml:.0f}ml"
+            else:
+                kcal_total = amount * kcal
+                amount_label = f"{amount:.1f}食" if amount != 1 else '1食'
+
+            kcal_total = round(kcal_total, 1)
+            total_kcal += kcal_total
+            results.append({
+                'input': line,
+                'matched': matched_entry['label'],
+                'unit': unit,
+                'amount': amount_label,
+                'kcal': kcal_total
+            })
+        else:
+            results.append({
+                'input': line,
+                'matched': None,
+                'unit': '不明',
+                'amount': '-',
+                'kcal': None
+            })
+
+    return {
+        'total_kcal': round(total_kcal, 1),
+        'items': results,
+        'note': '目安の計算です。食材や調理法で変動します。'
+    }
 
 
 def get_or_create_inbox():
@@ -819,7 +909,7 @@ def update_block(block_id):
     cursor = conn.cursor()
     updates = []
     values = []
-    fields = ['type', 'content', 'checked', 'position', 'collapsed', 'details']
+    fields = ['type', 'content', 'checked', 'position', 'collapsed', 'details', 'props']
     for field in fields:
         if field in data:
             updates.append(f'{field} = ?')
@@ -842,6 +932,19 @@ def delete_block(block_id):
     conn.commit()
     conn.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/calc-calories', methods=['POST'])
+def calc_calories():
+    """メニュー文字列から概算カロリーを返す"""
+    data = request.json or {}
+    raw_lines = data.get('lines', '')
+    if isinstance(raw_lines, list):
+        lines = raw_lines
+    else:
+        lines = str(raw_lines).splitlines()
+    result = estimate_calories(lines)
+    return jsonify(result)
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -1299,5 +1402,21 @@ def webhook_deploy():
     subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'])
     return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
 
-with app.app_context():
-    init_db()
+if __name__ == '__main__':
+    import webbrowser
+    from threading import Timer
+    
+    # 1秒後にブラウザを自動で開く予約をする
+    def open_browser():
+        webbrowser.open_new('http://127.0.0.1:5000/')
+    
+    Timer(1, open_browser).start()
+    
+    # アプリとして起動（ポート5000で待機）
+    with app.app_context():
+        init_db()
+    app.run(port=5000)
+else:
+    # PythonAnywhere用のWSGI
+    with app.app_context():
+        init_db()
