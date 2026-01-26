@@ -319,20 +319,20 @@
                 
                 <div class="mt-4 space-y-2">
                     <div class="flex flex-wrap gap-2 text-sm">
-                        <button onclick="addBlock('todo')" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">☑️ チェックボックスを追加</button>
-                        <button onclick="addBlock('text')" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">📝 テキスト</button>
+                        <button onmousedown="event.preventDefault(); addBlock('todo');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">☑️ チェックボックスを追加</button>
+                        <button onmousedown="event.preventDefault(); addBlock('text');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">📝 テキスト</button>
                     </div>
                     <div class="text-gray-300 hover:text-gray-500 cursor-pointer text-sm p-2 group">
                         <button onclick="toggleBlockMenu()" class="flex items-center gap-2">
                             + クリックしてブロックを追加
                         </button>
                         <div id="block-type-menu" class="hidden mt-2 bg-white rounded shadow-lg border border-gray-200 p-2 space-y-1 absolute z-10">
-                            <button onclick="addBlock('text'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📝 テキスト</button>
-                            <button onclick="addBlock('h1'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
-                            <button onclick="addBlock('toggle'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">▶ トグルリスト</button>
-                            <button onclick="addBlock('todo'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
-                            <button onclick="addBlock('calorie'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🍽️ 食事/カロリー</button>
-                            <button onclick="addBlock('image'); hideBlockMenu()" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🖼️ 画像</button>
+                            <button onmousedown="event.preventDefault(); addBlock('text'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📝 テキスト</button>
+                            <button onmousedown="event.preventDefault(); addBlock('h1'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
+                            <button onmousedown="event.preventDefault(); addBlock('toggle'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">▶ トグルリスト</button>
+                            <button onmousedown="event.preventDefault(); addBlock('todo'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
+                            <button onmousedown="event.preventDefault(); addBlock('calorie'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🍽️ 食事/カロリー</button>
+                            <button onmousedown="event.preventDefault(); addBlock('image'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🖼️ 画像</button>
                         </div>
                     </div>
                 </div>
@@ -1044,7 +1044,7 @@
                     const escapedTodo = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `
                         <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
-                        <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedTodo}</textarea>
+                        <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)" onkeydown="handleTodoKeydown(event, ${block.id})">${escapedTodo}</textarea>
                     `;
                 } else if (block.type === 'calorie') {
                     const escapedCalorie = (block.content || '').replace(/</g, '&lt;');
@@ -1175,6 +1175,32 @@
         async function deleteBlock(id) {
             await fetch(`/api/blocks/${id}`, { method: 'DELETE' });
             loadPage(currentPageId);
+        }
+
+        function focusPreviousBlock(blockId) {
+            if (!currentBlocks || currentBlocks.length === 0) return;
+            const sorted = currentBlocks.slice().sort((a, b) => a.position - b.position);
+            const idx = sorted.findIndex(b => b.id === blockId);
+            if (idx <= 0) return;
+            const targetId = sorted[idx - 1].id;
+            const targetEl = document.querySelector(`[data-id="${targetId}"] textarea, [data-id="${targetId}"] input[type="text"]`);
+            if (targetEl) {
+                setTimeout(() => {
+                    targetEl.focus();
+                    if (targetEl.setSelectionRange) {
+                        const len = targetEl.value ? targetEl.value.length : 0;
+                        targetEl.setSelectionRange(len, len);
+                    }
+                }, 50);
+            }
+        }
+
+        function handleTodoKeydown(event, blockId) {
+            if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+            const value = event.target.value || '';
+            if (value.trim() !== '') return;
+            event.preventDefault();
+            deleteBlock(blockId).then(() => focusPreviousBlock(blockId));
         }
         function triggerCoverUpload() { document.getElementById('cover-upload').click(); }
         async function uploadCover(input) {
