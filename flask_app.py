@@ -154,12 +154,30 @@ CALORIE_TABLE = [
     {'label': 'パスタ', 'keywords': ['パスタ', 'スパゲッティ'], 'kcal': 350, 'unit': '1人前'},
     {'label': '牛乳', 'keywords': ['牛乳', 'ミルク'], 'kcal': 130, 'unit': '200ml', 'per_ml': 200},
     {'label': 'サラダ', 'keywords': ['サラダ'], 'kcal': 80, 'unit': '1皿'},
+    {'label': '汁物', 'keywords': ['汁', 'スープ', '味噌汁', 'みそ汁'], 'kcal': 80, 'unit': '1杯(180ml)', 'per_ml': 180},
 ]
+
+DEFAULT_UNKNOWN_KCAL = 150  # 不明食材の暫定値
 
 
 def _extract_number(text, pattern):
     match = re.search(pattern, text)
     return float(match.group(1)) if match else None
+
+
+def _fallback_estimate(line):
+    lowered = line.lower()
+    if '汁' in line or 'スープ' in line:
+        return {'label': '汁物(推定)', 'kcal': 80, 'is_estimated': True}
+    if 'カレー' in line:
+        return {'label': 'カレー(推定)', 'kcal': 500, 'is_estimated': True}
+    if 'シチュー' in line:
+        return {'label': 'シチュー(推定)', 'kcal': 350, 'is_estimated': True}
+    if '煮込み' in line:
+        return {'label': '煮込み(推定)', 'kcal': 300, 'is_estimated': True}
+    if '炒め' in line or 'ソテー' in line:
+        return {'label': '炒め物(推定)', 'kcal': 320, 'is_estimated': True}
+    return {'label': '不明(推定)', 'kcal': DEFAULT_UNKNOWN_KCAL, 'is_estimated': True}
 
 
 def estimate_calories(lines):
@@ -205,15 +223,20 @@ def estimate_calories(lines):
                 'matched': matched_entry['label'],
                 'unit': unit,
                 'amount': amount_label,
-                'kcal': kcal_total
+                'kcal': kcal_total,
+                'is_estimated': False
             })
         else:
+            fallback = _fallback_estimate(line)
+            kcal_total = round(fallback['kcal'], 1)
+            total_kcal += kcal_total
             results.append({
                 'input': line,
-                'matched': None,
-                'unit': '不明',
+                'matched': fallback['label'],
+                'unit': '推定',
                 'amount': '-',
-                'kcal': None
+                'kcal': kcal_total,
+                'is_estimated': True
             })
 
     return {

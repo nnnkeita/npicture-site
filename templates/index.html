@@ -747,11 +747,12 @@
                 const known = item.kcal !== null && item.kcal !== undefined;
                 const kcalText = known ? `${item.kcal} kcal` : '不明';
                 const nameText = item.matched || item.input;
+                const badge = item.is_estimated ? ' (推定)' : '';
                 const unit = item.unit || '';
                 const amount = item.amount || '';
                 const row = document.createElement('div');
                 row.className = 'flex items-center justify-between gap-2 border-b border-gray-100 pb-1 last:border-b-0 last:pb-0';
-                row.innerHTML = `<div class="text-gray-700 truncate">${nameText} <span class="text-gray-400 text-[11px]">${unit} ${amount}</span></div><div class="text-gray-600 font-semibold">${kcalText}</div>`;
+                row.innerHTML = `<div class="text-gray-700 truncate">${nameText}${badge} <span class="text-gray-400 text-[11px]">${unit} ${amount}</span></div><div class="text-gray-600 font-semibold">${kcalText}</div>`;
                 listEl.appendChild(row);
             });
         }
