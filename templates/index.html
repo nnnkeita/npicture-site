@@ -117,6 +117,19 @@
             50% { background-color: #78350f; }
         }
 
+        /* 親ページへのパンくずリンク */
+        #parent-breadcrumb a {
+            transition: all 0.2s;
+        }
+        
+        html.dark #parent-breadcrumb a {
+            color: #9ca3af;
+        }
+        
+        html.dark #parent-breadcrumb a:hover {
+            color: #d1d5db;
+        }
+
         /* あとで調べるボタンのダーク版 */
         html.dark #inbox-link {
             background-color: #163e3f !important;
@@ -274,6 +287,14 @@
             </div>
 
             <div class="max-w-3xl mx-auto p-12 pb-32">
+                <!-- 親ページへのパンくずリスト -->
+                <div id="parent-breadcrumb" class="mb-6 hidden">
+                    <a href="#" id="parent-link" class="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-2">
+                        <span id="parent-icon"></span>
+                        <span id="parent-title"></span>
+                    </a>
+                </div>
+
                 <div class="group relative mb-4 flex items-end gap-4">
                     <div class="w-16 h-16 flex items-center justify-center text-5xl cursor-pointer hover:bg-gray-100 rounded transition" onclick="updateIcon()">
                         <span id="page-icon">📄</span>
@@ -1063,6 +1084,22 @@
 
             document.getElementById('page-icon').innerText = page.icon;
             document.getElementById('page-title').value = page.title;
+            
+            // 親ページの表示
+            const breadcrumb = document.getElementById('parent-breadcrumb');
+            if (page.parent_id) {
+                const parentRes = await fetch(`/api/pages/${page.parent_id}`);
+                const parentPage = await parentRes.json();
+                document.getElementById('parent-icon').innerText = parentPage.icon;
+                document.getElementById('parent-title').innerText = parentPage.title;
+                document.getElementById('parent-link').onclick = (e) => {
+                    e.preventDefault();
+                    loadPage(page.parent_id);
+                };
+                breadcrumb.classList.remove('hidden');
+            } else {
+                breadcrumb.classList.add('hidden');
+            }
             
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
