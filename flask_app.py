@@ -564,12 +564,73 @@ def create_page():
     conn.close()
     return jsonify(page)
 
-# --- カレンダーからページ作成用 ---
-@app.route('/api/pages/from-date', methods=['POST'])
-def create_page_from_date():
-    data = request.json
-    date_str = data.get('date') # YYYY-MM-DD
-    if not date_str: return jsonify({'error': 'Date required'}), 400
+    # 必要な子ページ（定型）を不足していれば補完するヘルパー
+    def ensure_daily_children(parent_page_id):
+        required = [
+            ('日記', '📝'),
+            ('筋トレ', '🏋️'),
+            ('英語学習', '🌍'),
+            ('食事', '🍽️'),
+        ]
+        cursor.execute('SELECT title FROM pages WHERE parent_id = ? AND is_deleted = 0', (parent_page_id,))
+        existing_titles = {row['title'] for row in cursor.fetchall()}
+        next_pos = get_next_position(cursor, parent_page_id)
+        for title_req, icon_req in required:
+            if title_req in existing_titles:
+                continue
+            cursor.execute(
+                'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                (title_req, icon_req, parent_page_id, next_pos)
+            )
+            child_id = cursor.lastrowid
+            next_pos += 1000.0
+            if title_req == '日記':
+                blocks = [
+                    {'type': 'h1', 'content': '体調'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': '天気'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': 'やったこと'},
+                    {'type': 'todo', 'content': ''},
+                    {'type': 'h1', 'content': '振り返り'},
+                    {'type': 'text', 'content': ''},
+                ]
+            elif title_req == '筋トレ':
+                blocks = [
+                    {'type': 'h1', 'content': '今日のメニュー'},
+                    {'type': 'todo', 'content': ''},
+                    {'type': 'h1', 'content': 'セット・回数'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': 'メモ'},
+                    {'type': 'text', 'content': ''},
+                ]
+            elif title_req == '英語学習':
+                blocks = [
+                    {'type': 'h1', 'content': '今日の学習内容'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': '新しい単語'},
+                    {'type': 'todo', 'content': ''},
+                    {'type': 'h1', 'content': '発音練習'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': 'リスニング時間'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': '気づいたこと'},
+                    {'type': 'text', 'content': ''},
+                ]
+            else:  # 食事
+                blocks = [
+                    {'type': 'h1', 'content': '今日の食事メモ'},
+                    {'type': 'text', 'content': ''},
+                    {'type': 'h1', 'content': 'カロリー記録'},
+                    {'type': 'calorie', 'content': ''},
+                ]
+            for idx, block in enumerate(blocks):
+                cursor.execute(
+                    "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
+                    (child_id, block['type'], block.get('content', ''), block.get('checked', 0), (idx + 1) * 1000.0, '{}')
+                )
+
+    # 同じタイトルのページがあれば再利用し、不足子ページを補完
 
     # 日付形式を日本語タイトルに変換 (例: 2026-01-24 -> 2026年1月24日)
     target_date = None
@@ -604,6 +665,8 @@ def create_page_from_date():
         conn.commit()
         cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
         page = dict(cursor.fetchone())
+        ensure_daily_children(page['id'])
+        conn.commit()
         conn.close()
         return jsonify(page)
     
@@ -820,7 +883,7 @@ def update_page(page_id):
     cursor = conn.cursor()
     updates = []
     values = []
-    fields = ['title', 'icon', 'parent_id', 'cover_image', 'is_pinned', 'is_deleted']
+    fields = ['title', 'icon', 'parent_id', 'cover_image', 'is_pinned', 'is_deleted', 'position']
     for field in fields:
         if field in data:
             updates.append(f'{field} = ?')
