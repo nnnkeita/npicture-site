@@ -30,6 +30,7 @@
         .menu-item:hover { background-color: #f3f4f6; }
         .drag-handle { cursor: grab; color: #d1d5db; display: flex; align-items: center; justify-content: center; width: 20px; opacity: 0; }
         .block-row:hover .drag-handle { opacity: 1; }
+        html.dark .block-row:hover { background-color: #1f2937; }
         .cover-image-container { height: 20vh; min-height: 150px; background-color: #f9fafb; position: relative; display: none; background-size: cover; background-position: center; }
 
         /* --- Dark Mode Overrides --- */
@@ -1161,10 +1162,10 @@
             container.innerHTML = '';
             blocks.forEach(block => {
                 const div = document.createElement('div');
-                div.className = 'block-row group flex items-start gap-2 py-1 relative';
+                div.className = 'block-row group flex items-start gap-2 py-1 relative hover:bg-gray-50 rounded px-2 transition';
                 div.dataset.id = block.id;
                 div.dataset.position = block.position;
-                const handle = `<div class="drag-handle hover:bg-gray-200 rounded">⋮⋮</div>`;
+                const handle = `<div class="drag-handle hover:bg-gray-200 rounded text-gray-300">⋮⋮</div>`;
                 let contentHtml = '';
                 if (block.type === 'h1') {
                     contentHtml = `<input class="text-3xl font-bold w-full border-none focus:ring-0 bg-transparent cursor-text" value="${block.content}" onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value)">`;
@@ -1213,7 +1214,7 @@
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
                 }
-                const deleteBtn = `<button onclick="deleteBlock(${block.id})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 p-1">×</button>`;
+                const deleteBtn = `<button onclick="deleteBlock(${block.id})" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded p-1 transition" title="削除">×</button>`;
                 div.innerHTML = handle + contentHtml + deleteBtn;
                 container.appendChild(div);
                 
