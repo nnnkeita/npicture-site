@@ -341,7 +341,9 @@
     </div>
 
     <div id="context-menu">
-        <div class="menu-item" onclick="contextAction('move_to_trash')">ゴミ箱に移動</div>
+        <div class="menu-item" onclick="contextAction('copy')">📋 コピー</div>
+        <div class="menu-item" onclick="contextAction('paste')" id="paste-menu-item">📄 貼り付け</div>
+        <div class="menu-item border-t border-gray-100" onclick="contextAction('move_to_trash')">ゴミ箱に移動</div>
         <div class="menu-item" onclick="contextAction('rename')">名前を変更</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">サブページ作成</div>
         <div class="menu-item" onclick="contextAction('new_folder')">フォルダ作成</div>
@@ -480,6 +482,9 @@
         let focusedBlockId = null;
         let siblingsByParent = new Map(); // 親ごとの並び順を保持
         let pageHierarchy = new Map(); // 子孫チェック用の簡易ツリー
+        let copiedPageId = null; // コピーしたページID
+        let undoStack = []; // 元に戻す履歴
+        const MAX_UNDO = 50; // 最大履歴数
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -544,6 +549,14 @@
             } else {
                 openTodayPage();
             }
+            
+            // Ctrl+Z (Cmd+Z) で元に戻す
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                    e.preventDefault();
+                    performUndo();
+                }
+            });
         });
 
         function setFocusedBlock(id) {
@@ -683,9 +696,36 @@
             hideContextMenu();
             if (!contextTargetId && selectedPageIds.size === 0) return;
             
-            if (action === 'move_to_trash') {
+            if (action === 'copy') {
+                copiedPageId = contextTargetId;
+                document.getElementById('paste-menu-item').style.opacity = '1';
+                console.log('ページをコピーしました:', copiedPageId);
+            } else if (action === 'paste') {
+                if (!copiedPageId) {
+                    alert('コピーされたページがありません');
+                    return;
+                }
+                // 貼り付け先の親IDを決定（右クリックしたページの親、またはルート）
+                const res = await fetch(`/api/pages/${contextTargetId}`);
+                const targetPage = await res.json();
+                const pasteParentId = targetPage.parent_id;
+                
+                // 元に戻す用に保存
+                saveUndoState('paste', { copiedPageId, targetPageId: contextTargetId });
+                
+                // ページをコピー
+                const copyRes = await fetch(`/api/pages/${copiedPageId}/copy`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ parent_id: pasteParentId })
+                });
+                const newPage = await copyRes.json();
+                fetchPages();
+                loadPage(newPage.id);
+            } else if (action === 'move_to_trash') {
                 const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : [contextTargetId];
                 if(confirm(`${targets.length}件をゴミ箱に移動しますか？`)) {
+                    saveUndoState('delete', { pageIds: targets });
                     for (const id of targets) {
                         await fetch(`/api/pages/${id}/move-to-trash`, { method: 'POST' });
                         if(currentPageId === id) {
@@ -696,8 +736,12 @@
                     fetchPages();
                 }
             } else if (action === 'rename') {
-                const newTitle = prompt('新しい名前:');
-                if(newTitle) {
+                const res = await fetch(`/api/pages/${contextTargetId}`);
+                const page = await res.json();
+                const oldTitle = page.title;
+                const newTitle = prompt('新しい名前:', oldTitle);
+                if(newTitle && newTitle !== oldTitle) {
+                    saveUndoState('rename', { pageId: contextTargetId, oldTitle, newTitle });
                     await fetch(`/api/pages/${contextTargetId}`, {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
@@ -707,8 +751,12 @@
                     if(currentPageId === contextTargetId) document.getElementById('page-title').value = newTitle;
                 }
             } else if (action === 'change_icon') {
-                const newIcon = prompt('新しいアイコン（絵文字）:');
-                if(newIcon) {
+                const res = await fetch(`/api/pages/${contextTargetId}`);
+                const page = await res.json();
+                const oldIcon = page.icon;
+                const newIcon = prompt('新しいアイコン（絵文字）:', oldIcon);
+                if(newIcon && newIcon !== oldIcon) {
+                    saveUndoState('icon', { pageId: contextTargetId, oldIcon, newIcon });
                     await fetch(`/api/pages/${contextTargetId}`, {
                         method: 'PUT',
                         headers: {'Content-Type': 'application/json'},
@@ -1587,6 +1635,59 @@
         }
 
         // 今日の浮上パネル機能は削除（UIを広く使用）
+
+        // --- 元に戻す機能 ---
+        function saveUndoState(actionType, data) {
+            undoStack.push({ actionType, data, timestamp: Date.now() });
+            if (undoStack.length > MAX_UNDO) {
+                undoStack.shift();
+            }
+        }
+
+        async function performUndo() {
+            if (undoStack.length === 0) {
+                console.log('元に戻す操作がありません');
+                return;
+            }
+            
+            const lastAction = undoStack.pop();
+            const { actionType, data } = lastAction;
+            
+            try {
+                if (actionType === 'delete') {
+                    for (const pageId of data.pageIds) {
+                        await fetch(`/api/pages/${pageId}/restore`, { method: 'POST' });
+                    }
+                    await fetchPages();
+                    console.log('削除を元に戻しました');
+                } else if (actionType === 'rename') {
+                    await fetch(`/api/pages/${data.pageId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ title: data.oldTitle })
+                    });
+                    await fetchPages();
+                    if (currentPageId === data.pageId) {
+                        document.getElementById('page-title').value = data.oldTitle;
+                    }
+                    console.log('名前変更を元に戻しました');
+                } else if (actionType === 'icon') {
+                    await fetch(`/api/pages/${data.pageId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ icon: data.oldIcon })
+                    });
+                    await fetchPages();
+                    if (currentPageId === data.pageId) {
+                        document.getElementById('page-icon').innerText = data.oldIcon;
+                    }
+                    console.log('アイコン変更を元に戻しました');
+                }
+            } catch (e) {
+                console.error('元に戻す操作に失敗しました:', e);
+                alert('元に戻す操作に失敗しました');
+            }
+        }
     </script>
 </body>
 </html>

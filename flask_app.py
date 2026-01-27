@@ -928,6 +928,29 @@ def restore_page(page_id):
     conn.close()
     return jsonify({'success': True})
 
+@app.route('/api/pages/<int:page_id>/copy', methods=['POST'])
+def copy_page(page_id):
+    """ページをコピー（ツリー構造ごと）"""
+    data = request.json or {}
+    parent_id = data.get('parent_id')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 元のページを取得してタイトルに「のコピー」を追加
+    cursor.execute('SELECT title FROM pages WHERE id = ?', (page_id,))
+    original = cursor.fetchone()
+    new_title = (dict(original)['title'] if original else '無題') + 'のコピー'
+    
+    new_page_id = copy_page_tree(cursor, page_id, new_parent_id=parent_id, new_title=new_title)
+    
+    conn.commit()
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
+    new_page = dict(cursor.fetchone())
+    conn.close()
+    
+    return jsonify(new_page)
+
 @app.route('/api/pages/<int:page_id>', methods=['DELETE'])
 def delete_page(page_id):
     conn = get_db()
