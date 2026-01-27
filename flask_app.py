@@ -660,6 +660,16 @@ def create_page_from_date():
                 {'type': 'h1', 'content': '気づいたこと'},
                 {'type': 'text', 'content': ''},
             ]
+        },
+        {
+            'title': '食事',
+            'icon': '🍽️',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の食事メモ'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'カロリー記録'},
+                {'type': 'calorie', 'content': ''},
+            ]
         }
     ]
 
