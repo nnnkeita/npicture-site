@@ -465,6 +465,9 @@
                 });
         }
 
+        // /inbox から渡される場合は値が入る（それ以外は null）
+        window.INBOX_ID = {{ inbox_id|default(None)|tojson }};
+
         let currentPageId = null;
         let typingTimer;
         let contextTargetId = null;
@@ -533,8 +536,12 @@
             applyThemeFromStorage();
             fetchPages();
             renderCalendar();
-            // 起動時に今日のページを自動で開く
-            openTodayPage();
+            // /inbox で開かれた場合は単一ページを開く。それ以外は今日のページ。
+            if (window.INBOX_ID !== null) {
+                loadPage(window.INBOX_ID);
+            } else {
+                openTodayPage();
+            }
         });
 
         function setFocusedBlock(id) {
