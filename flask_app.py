@@ -861,6 +861,126 @@ def create_page_from_template():
     conn.close()
     return jsonify(page)
 
+@app.route('/api/pages/from-date', methods=['POST'])
+def create_page_from_date():
+    """指定日付のページを作成（存在しない場合は前日をコピー）"""
+    data = request.json
+    date_str = data.get('date')  # YYYY-MM-DD形式
+    
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d')
+        title = f"{target_date.year}年{target_date.month}月{target_date.day}日"
+    except Exception:
+        return jsonify({'error': 'Invalid date format'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 同じタイトルのページがあれば再利用
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND is_deleted = 0 LIMIT 1', (title,))
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        return jsonify(dict(existing))
+    
+    # 前日ページがあればコピー
+    prev_date = target_date - timedelta(days=1)
+    prev_title = f"{prev_date.year}年{prev_date.month}月{prev_date.day}日"
+    cursor.execute('SELECT id FROM pages WHERE title = ? AND is_deleted = 0 ORDER BY created_at DESC LIMIT 1', (prev_title,))
+    prev_row = cursor.fetchone()
+    
+    if prev_row:
+        # 前日のページをコピー
+        previous_page_id = prev_row['id']
+        new_page_id = copy_page_tree(cursor, previous_page_id, new_title=title, new_parent_id=None, override_icon='📅')
+        conn.commit()
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
+        page = dict(cursor.fetchone())
+        conn.close()
+        return jsonify(page)
+    
+    # 前日もなければ新規作成
+    new_pos = get_next_position(cursor, None)
+    cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                   (title, '📅', None, new_pos))
+    page_id = cursor.lastrowid
+    
+    # デフォルトテキストブロック
+    cursor.execute("INSERT INTO blocks (page_id, type, content, position, props) VALUES (?, 'text', '', ?, ?)", 
+                   (page_id, 1000.0, '{}'))
+    
+    # 子ページ生成
+    children_templates = [
+        {
+            'title': '日記',
+            'icon': '📝',
+            'blocks': [
+                {'type': 'h1', 'content': '体調'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '天気'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'やったこと'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '振り返り'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '筋トレ',
+            'icon': '🏋️',
+            'blocks': [
+                {'type': 'h1', 'content': '今日のメニュー'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': 'セット・回数'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'メモ'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '英語学習',
+            'icon': '🌍',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の学習内容'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '新しい単語'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '発音練習'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'リスニング時間'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '気づいたこと'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '食事',
+            'icon': '🍽️',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の食事メモ'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'カロリー記録'},
+                {'type': 'calorie', 'content': ''},
+            ]
+        }
+    ]
+    
+    for i, child in enumerate(children_templates):
+        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                       (child['title'], child['icon'], page_id, (i + 1) * 1000.0))
+        child_id = cursor.lastrowid
+        for j, block in enumerate(child['blocks']):
+            cursor.execute(
+                "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
+                (child_id, block['type'], block.get('content', ''), block.get('checked', 0), (j + 1) * 1000.0, '{}')
+            )
+    
+    conn.commit()
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page = dict(cursor.fetchone())
+    conn.close()
+    return jsonify(page)
+
 @app.route('/api/pages/<int:page_id>', methods=['GET'])
 def get_page(page_id):
     conn = get_db()
