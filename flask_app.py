@@ -895,6 +895,28 @@ def create_page_from_date():
         previous_page_id = prev_row['id']
         new_page_id = copy_page_tree(cursor, previous_page_id, new_title=title, new_parent_id=None, override_icon='📅')
         conn.commit()
+        
+        # 不足している子ページを追加
+        cursor.execute('SELECT title FROM pages WHERE parent_id = ? AND is_deleted = 0', (new_page_id,))
+        existing_titles = {row['title'] for row in cursor.fetchall()}
+        
+        required_children = [
+            ('日記', '📝'),
+            ('筋トレ', '🏋️'),
+            ('英語学習', '🌍'),
+            ('食事', '🍽️'),
+        ]
+        
+        next_pos = get_next_position(cursor, new_page_id)
+        for title_req, icon_req in required_children:
+            if title_req not in existing_titles:
+                cursor.execute(
+                    'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                    (title_req, icon_req, new_page_id, next_pos)
+                )
+                next_pos += 1000.0
+        
+        conn.commit()
         cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
         page = dict(cursor.fetchone())
         conn.close()
