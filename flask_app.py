@@ -457,7 +457,7 @@ def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, p
     for block in cursor.fetchall():
         block_dict = dict(block)
         cursor.execute(
-            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 new_page_id,
                 block_dict.get('type', 'text'),
@@ -465,7 +465,8 @@ def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, p
                 block_dict.get('checked', 0),
                 block_dict.get('position', 0),
                 block_dict.get('collapsed', 0),
-                block_dict.get('details', '')
+                block_dict.get('details', ''),
+                block_dict.get('props', '{}')
             )
         )
 
