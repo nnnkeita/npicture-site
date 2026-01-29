@@ -1240,7 +1240,7 @@
                     contentHtml = `
                         <div class="w-full border border-purple-200 bg-white rounded-lg p-3 shadow-sm">
                             <div class="flex items-center gap-2 mb-2">
-                                <button onclick="speakBlock(${block.id}, '${lang}', ${rate})" class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-semibold flex items-center gap-2">
+                                <button onclick="speakBlock(${block.id})" class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-semibold flex items-center gap-2">
                                     🔊 再生
                                 </button>
                                 <button onclick="stopSpeaking()" class="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm">停止</button>
@@ -1805,7 +1805,7 @@
         // --- 読み上げ機能 ---
         let currentSpeechUtterance = null;
 
-        function speakBlock(blockId, lang = 'ja-JP', rate = 1) {
+        function speakBlock(blockId) {
             const blockDiv = document.querySelector(`[data-id="${blockId}"]`);
             if (!blockDiv) return;
             
@@ -1817,6 +1817,13 @@
             
             const text = textarea.value;
             
+            // 現在の言語と速度を取得
+            const langSelect = document.getElementById(`speak-lang-${blockId}`);
+            const rateInput = document.getElementById(`speak-rate-${blockId}`);
+            
+            const lang = langSelect ? langSelect.value : 'ja-JP';
+            const rate = rateInput ? parseFloat(rateInput.value) : 1;
+            
             // 既に再生中なら停止
             if (currentSpeechUtterance) {
                 window.speechSynthesis.cancel();
@@ -1824,7 +1831,7 @@
             
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = lang;
-            utterance.rate = parseFloat(rate) || 1;
+            utterance.rate = rate || 1;
             utterance.pitch = 1;
             utterance.volume = 1;
             
