@@ -1276,6 +1276,12 @@
                 } else if (block.type === 'book') {
                     const bookProps = parseBlockProps(block.props);
                     renderBookScrollPages(block.id, bookProps);
+                } else if (block.type === 'speak') {
+                    // speak型の場合もtextareaの自動リサイズ
+                    const speakTextarea = div.querySelector('.block-textarea');
+                    if(speakTextarea) {
+                        autoResizeTextarea(speakTextarea);
+                    }
                 }
             });
 
