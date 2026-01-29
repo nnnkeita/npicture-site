@@ -363,6 +363,9 @@ def page_to_markdown(page, level=1):
         elif block_type == 'image':
             lines.append(f"![Image]({content})")
             lines.append('')
+        elif block_type == 'speak':
+            lines.append(f"🔊 [読み上げ]: {content}")
+            lines.append('')
         else:  # text
             if content:
                 lines.append(content)

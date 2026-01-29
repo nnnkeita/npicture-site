@@ -321,6 +321,7 @@
                 <div class="mt-4 space-y-2">
                     <div class="flex flex-wrap gap-2 text-sm">
                         <button onmousedown="event.preventDefault(); addBlock('todo');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">☑️ チェックボックスを追加</button>
+                        <button onmousedown="event.preventDefault(); addBlock('speak');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">🔊 読み上げボックスを追加</button>
                         <button onmousedown="event.preventDefault(); addBlock('book');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">📚 本の項目を追加</button>
                         <button onmousedown="event.preventDefault(); addBlock('text');" class="px-3 py-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:bg-gray-100">📝 テキスト</button>
                     </div>
@@ -333,6 +334,7 @@
                             <button onmousedown="event.preventDefault(); addBlock('h1'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
                             <button onmousedown="event.preventDefault(); addBlock('toggle'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">▶ トグルリスト</button>
                             <button onmousedown="event.preventDefault(); addBlock('todo'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
+                            <button onmousedown="event.preventDefault(); addBlock('speak'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🔊 読み上げボックス</button>
                             <button onmousedown="event.preventDefault(); addBlock('book'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📚 本</button>
                             <button onmousedown="event.preventDefault(); addBlock('calorie'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🍽️ 食事/カロリー</button>
                             <button onmousedown="event.preventDefault(); addBlock('image'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🖼️ 画像</button>
@@ -1230,6 +1232,31 @@
                             </div>
                         </details>
                     `;
+                } else if (block.type === 'speak') {
+                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
+                    const props = parseBlockProps(block.props);
+                    const lang = props.lang || 'ja-JP';
+                    const rate = props.rate || 1;
+                    contentHtml = `
+                        <div class="w-full border border-purple-200 bg-white rounded-lg p-3 shadow-sm">
+                            <div class="flex items-center gap-2 mb-2">
+                                <button onclick="speakBlock(${block.id}, '${lang}', ${rate})" class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-semibold flex items-center gap-2">
+                                    🔊 再生
+                                </button>
+                                <button onclick="stopSpeaking()" class="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm">停止</button>
+                                <select id="speak-lang-${block.id}" class="px-2 py-1 border border-purple-100 rounded text-sm" onchange="updateSpeakLang(${block.id}, this.value)">
+                                    <option value="ja-JP" ${lang === 'ja-JP' ? 'selected' : ''}>日本語</option>
+                                    <option value="en-US" ${lang === 'en-US' ? 'selected' : ''}>English (US)</option>
+                                    <option value="en-GB" ${lang === 'en-GB' ? 'selected' : ''}>English (UK)</option>
+                                    <option value="zh-CN" ${lang === 'zh-CN' ? 'selected' : ''}>中文</option>
+                                </select>
+                                <label class="text-sm text-gray-600">速度:</label>
+                                <input id="speak-rate-${block.id}" type="range" min="0.5" max="2" step="0.1" value="${rate}" onchange="updateSpeakRate(${block.id}, this.value)" class="w-24">
+                                <span class="text-sm text-gray-600" id="speak-rate-display-${block.id}">${rate}x</span>
+                            </div>
+                            <textarea class="w-full border border-purple-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="読み上げたいテキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>
+                        </div>
+                    `;
                 } else {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
@@ -1302,6 +1329,10 @@
             const payload = { type };
             if (position !== null && position !== undefined) {
                 payload.position = position;
+            }
+            // speak タイプの場合は初期props設定
+            if (type === 'speak') {
+                payload.props = JSON.stringify({ lang: 'ja-JP', rate: 1 });
             }
             const res = await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
             const block = await res.json();
@@ -1769,6 +1800,62 @@
                 console.error('元に戻す操作に失敗しました:', e);
                 alert('元に戻す操作に失敗しました');
             }
+        }
+
+        // --- 読み上げ機能 ---
+        let currentSpeechUtterance = null;
+
+        function speakBlock(blockId, lang = 'ja-JP', rate = 1) {
+            const blockDiv = document.querySelector(`[data-id="${blockId}"]`);
+            if (!blockDiv) return;
+            
+            const textarea = blockDiv.querySelector('textarea');
+            if (!textarea || !textarea.value.trim()) {
+                alert('読み上げるテキストを入力してください');
+                return;
+            }
+            
+            const text = textarea.value;
+            
+            // 既に再生中なら停止
+            if (currentSpeechUtterance) {
+                window.speechSynthesis.cancel();
+            }
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang;
+            utterance.rate = parseFloat(rate) || 1;
+            utterance.pitch = 1;
+            utterance.volume = 1;
+            
+            currentSpeechUtterance = utterance;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function stopSpeaking() {
+            window.speechSynthesis.cancel();
+            currentSpeechUtterance = null;
+        }
+
+        function updateSpeakLang(blockId, lang) {
+            const props = {
+                lang: lang,
+                rate: parseFloat(document.getElementById(`speak-rate-${blockId}`).value) || 1
+            };
+            updateBlock(blockId, 'props', JSON.stringify(props));
+        }
+
+        function updateSpeakRate(blockId, rate) {
+            const rateValue = parseFloat(rate);
+            document.getElementById(`speak-rate-display-${blockId}`).textContent = rateValue.toFixed(1) + 'x';
+            
+            const langSelect = document.getElementById(`speak-lang-${blockId}`);
+            const lang = langSelect.value;
+            const props = {
+                lang: lang,
+                rate: rateValue
+            };
+            updateBlock(blockId, 'props', JSON.stringify(props));
         }
     </script>
 </body>
