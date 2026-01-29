@@ -1813,6 +1813,25 @@
 
         // --- 読み上げ機能 ---
         let currentSpeechUtterance = null;
+        let voices = [];
+
+        // 音声リスト取得の初期化
+        function initVoices() {
+            if (window.speechSynthesis) {
+                voices = window.speechSynthesis.getVoices();
+                console.log('🎙️ Available voices:', voices.map(v => v.name + ' (' + v.lang + ')'));
+                
+                // voiceschangedイベントリスナー（Chrome等で動的に読み込まれる場合）
+                window.speechSynthesis.onvoiceschanged = () => {
+                    voices = window.speechSynthesis.getVoices();
+                    console.log('🎙️ Voices updated:', voices.map(v => v.name + ' (' + v.lang + ')'));
+                };
+            }
+        }
+
+        // ページロード時に初期化
+        window.addEventListener('load', initVoices);
+        initVoices();
 
         function speakBlock(blockId) {
             console.log('📢 speakBlock called with blockId:', blockId);
@@ -1837,6 +1856,12 @@
             
             console.log('📝 Text to speak:', text);
             
+            // ブラウザの互換性確認
+            if (!window.speechSynthesis) {
+                alert('このブラウザは読み上げ機能をサポートしていません');
+                return;
+            }
+            
             // 現在の言語と速度を取得
             const langSelect = document.getElementById(`speak-lang-${blockId}`);
             const rateInput = document.getElementById(`speak-rate-${blockId}`);
@@ -1849,6 +1874,23 @@
             // 既に再生中なら停止
             if (currentSpeechUtterance) {
                 window.speechSynthesis.cancel();
+                console.log('⏸️ Cancelled previous utterance');
+            }
+            
+            // 利用可能な音声を言語から検索
+            let selectedVoice = null;
+            if (voices.length > 0) {
+                // 言語にマッチする音声を探す
+                selectedVoice = voices.find(voice => voice.lang === lang);
+                if (!selectedVoice) {
+                    // 言語プレフィックスでマッチ（例：ja-JP → ja-*）
+                    selectedVoice = voices.find(voice => voice.lang.startsWith(lang.substring(0, 2)));
+                }
+                if (!selectedVoice) {
+                    // フォールバック：最初の音声を使用
+                    selectedVoice = voices[0];
+                }
+                console.log('🎙️ Selected voice:', selectedVoice.name, selectedVoice.lang);
             }
             
             const utterance = new SpeechSynthesisUtterance(text);
@@ -1857,26 +1899,45 @@
             utterance.pitch = 1;
             utterance.volume = 1;
             
-            utterance.onstart = () => console.log('▶️ Speech started');
-            utterance.onend = () => console.log('⏹️ Speech ended');
-            utterance.onerror = (event) => console.error('❌ Speech error:', event.error);
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            }
+            
+            utterance.onstart = () => {
+                console.log('▶️ Speech started');
+            };
+            
+            utterance.onend = () => {
+                console.log('⏹️ Speech ended');
+                currentSpeechUtterance = null;
+            };
+            
+            utterance.onerror = (event) => {
+                console.error('❌ Speech error:', event.error);
+                alert('読み上げエラー: ' + event.error);
+            };
+            
+            utterance.onpause = () => {
+                console.log('⏸️ Speech paused');
+            };
+            
+            utterance.onresume = () => {
+                console.log('▶️ Speech resumed');
+            };
             
             currentSpeechUtterance = utterance;
             
-            // ブラウザの互換性確認
-            if (!window.speechSynthesis) {
-                alert('このブラウザは読み上げ機能をサポートしていません');
-                return;
-            }
-            
+            // Chrome等では speak() 後に cancel()/speak() を連続で呼ぶと失敗する可能性があるため、
+            // 若干の遅延を入れる場合もあるが、通常は不要
             window.speechSynthesis.speak(utterance);
-            console.log('🔊 Speech synthesis started');
+            console.log('🔊 Speech synthesis queued');
         }
 
         function stopSpeaking() {
-            console.log('⏸️ Stopping speech');
+            console.log('⏹️ Stopping speech');
             if (window.speechSynthesis) {
                 window.speechSynthesis.cancel();
+                console.log('🛑 Speech cancelled');
             }
             currentSpeechUtterance = null;
         }
