@@ -1871,8 +1871,10 @@
             
             console.log('🌍 Language:', lang, '⚡ Rate:', rate);
             
-            // 既に再生中なら停止
+            // 既に再生中なら停止（前の音声のエラーイベントを無視）
             if (currentSpeechUtterance) {
+                // 前の音声オブジェクトのエラーハンドラを削除
+                currentSpeechUtterance.onerror = null;
                 window.speechSynthesis.cancel();
                 console.log('⏸️ Cancelled previous utterance');
             }
@@ -1913,8 +1915,13 @@
             };
             
             utterance.onerror = (event) => {
-                console.error('❌ Speech error:', event.error);
-                alert('読み上げエラー: ' + event.error);
+                // 'canceled' エラーは無視（前の発話のキャンセルによるエラー）
+                if (event.error !== 'canceled') {
+                    console.error('❌ Speech error:', event.error);
+                    alert('読み上げエラー: ' + event.error);
+                } else {
+                    console.log('ℹ️ Previous utterance cancelled');
+                }
             };
             
             utterance.onpause = () => {
