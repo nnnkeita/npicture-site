@@ -1233,26 +1233,29 @@
                         </details>
                     `;
                 } else if (block.type === 'speak') {
+                    console.log('🔊 Rendering speak block:', block.id, block);
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     const props = parseBlockProps(block.props);
                     const lang = props.lang || 'ja-JP';
                     const rate = props.rate || 1;
                     contentHtml = `
                         <div class="w-full border border-purple-200 bg-white rounded-lg p-3 shadow-sm">
-                            <div class="flex items-center gap-2 mb-2">
-                                <button onclick="speakBlock(${block.id})" class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-semibold flex items-center gap-2">
+                            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                <button type="button" onclick="speakBlock(${block.id})" class="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded text-sm font-semibold">
                                     🔊 再生
                                 </button>
-                                <button onclick="stopSpeaking()" class="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm">停止</button>
+                                <button type="button" onclick="stopSpeaking()" class="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm">停止</button>
                                 <select id="speak-lang-${block.id}" class="px-2 py-1 border border-purple-100 rounded text-sm" onchange="updateSpeakLang(${block.id}, this.value)">
                                     <option value="ja-JP" ${lang === 'ja-JP' ? 'selected' : ''}>日本語</option>
                                     <option value="en-US" ${lang === 'en-US' ? 'selected' : ''}>English (US)</option>
                                     <option value="en-GB" ${lang === 'en-GB' ? 'selected' : ''}>English (UK)</option>
                                     <option value="zh-CN" ${lang === 'zh-CN' ? 'selected' : ''}>中文</option>
                                 </select>
-                                <label class="text-sm text-gray-600">速度:</label>
-                                <input id="speak-rate-${block.id}" type="range" min="0.5" max="2" step="0.1" value="${rate}" onchange="updateSpeakRate(${block.id}, this.value)" class="w-24">
-                                <span class="text-sm text-gray-600" id="speak-rate-display-${block.id}">${rate}x</span>
+                                <div class="flex items-center gap-2">
+                                    <label class="text-sm text-gray-600 whitespace-nowrap">速度:</label>
+                                    <input id="speak-rate-${block.id}" type="range" min="0.5" max="2" step="0.1" value="${rate}" onchange="updateSpeakRate(${block.id}, this.value)" class="w-20">
+                                    <span class="text-sm text-gray-600 w-8" id="speak-rate-display-${block.id}">${rate}x</span>
+                                </div>
                             </div>
                             <textarea class="w-full border border-purple-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="読み上げたいテキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>
                         </div>
@@ -1812,16 +1815,27 @@
         let currentSpeechUtterance = null;
 
         function speakBlock(blockId) {
+            console.log('📢 speakBlock called with blockId:', blockId);
+            
             const blockDiv = document.querySelector(`[data-id="${blockId}"]`);
-            if (!blockDiv) return;
+            if (!blockDiv) {
+                console.error('❌ Block not found:', blockId);
+                return;
+            }
             
             const textarea = blockDiv.querySelector('textarea');
-            if (!textarea || !textarea.value.trim()) {
+            if (!textarea) {
+                console.error('❌ Textarea not found in block:', blockId);
+                return;
+            }
+            
+            const text = textarea.value.trim();
+            if (!text) {
                 alert('読み上げるテキストを入力してください');
                 return;
             }
             
-            const text = textarea.value;
+            console.log('📝 Text to speak:', text);
             
             // 現在の言語と速度を取得
             const langSelect = document.getElementById(`speak-lang-${blockId}`);
@@ -1830,6 +1844,8 @@
             const lang = langSelect ? langSelect.value : 'ja-JP';
             const rate = rateInput ? parseFloat(rateInput.value) : 1;
             
+            console.log('🌍 Language:', lang, '⚡ Rate:', rate);
+            
             // 既に再生中なら停止
             if (currentSpeechUtterance) {
                 window.speechSynthesis.cancel();
@@ -1837,33 +1853,55 @@
             
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = lang;
-            utterance.rate = rate || 1;
+            utterance.rate = Math.max(0.5, Math.min(2, rate || 1));
             utterance.pitch = 1;
             utterance.volume = 1;
             
+            utterance.onstart = () => console.log('▶️ Speech started');
+            utterance.onend = () => console.log('⏹️ Speech ended');
+            utterance.onerror = (event) => console.error('❌ Speech error:', event.error);
+            
             currentSpeechUtterance = utterance;
+            
+            // ブラウザの互換性確認
+            if (!window.speechSynthesis) {
+                alert('このブラウザは読み上げ機能をサポートしていません');
+                return;
+            }
+            
             window.speechSynthesis.speak(utterance);
+            console.log('🔊 Speech synthesis started');
         }
 
         function stopSpeaking() {
-            window.speechSynthesis.cancel();
+            console.log('⏸️ Stopping speech');
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
             currentSpeechUtterance = null;
         }
 
         function updateSpeakLang(blockId, lang) {
+            console.log('🌍 Updating language:', blockId, lang);
+            const rateInput = document.getElementById(`speak-rate-${blockId}`);
+            const rate = rateInput ? parseFloat(rateInput.value) : 1;
             const props = {
                 lang: lang,
-                rate: parseFloat(document.getElementById(`speak-rate-${blockId}`).value) || 1
+                rate: rate
             };
             updateBlock(blockId, 'props', JSON.stringify(props));
         }
 
         function updateSpeakRate(blockId, rate) {
+            console.log('⚡ Updating rate:', blockId, rate);
             const rateValue = parseFloat(rate);
-            document.getElementById(`speak-rate-display-${blockId}`).textContent = rateValue.toFixed(1) + 'x';
+            const displayEl = document.getElementById(`speak-rate-display-${blockId}`);
+            if (displayEl) {
+                displayEl.textContent = rateValue.toFixed(1) + 'x';
+            }
             
             const langSelect = document.getElementById(`speak-lang-${blockId}`);
-            const lang = langSelect.value;
+            const lang = langSelect ? langSelect.value : 'ja-JP';
             const props = {
                 lang: lang,
                 rate: rateValue
