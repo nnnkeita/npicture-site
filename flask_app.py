@@ -19,6 +19,56 @@ DATABASE = os.path.join(BASE_DIR, 'notion.db')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 TEMPLATE_FOLDER = os.path.join(BASE_DIR, 'templates')
 STATIC_FOLDER = os.path.join(BASE_DIR, 'static')
+BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
+
+# バックアップフォルダ作成
+os.makedirs(BACKUP_FOLDER, exist_ok=True)
+
+def backup_database_to_json():
+    """データベースをJSONテキスト形式でバックアップ"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # テーブル一覧取得
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """)
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        # バックアップデータ作成
+        backup_data = {
+            'timestamp': datetime.now().isoformat(),
+            'database': 'notion.db',
+            'tables': {}
+        }
+        
+        # 各テーブルをエクスポート
+        for table in tables:
+            cursor.execute(f'SELECT * FROM {table}')
+            rows = cursor.fetchall()
+            backup_data['tables'][table] = [dict(row) for row in rows]
+        
+        conn.close()
+        
+        # JSONファイルに保存
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = os.path.join(BACKUP_FOLDER, f'backup_{timestamp}.json')
+        
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        # 最新のバックアップを latest.json にコピー
+        latest_file = os.path.join(BACKUP_FOLDER, 'latest.json')
+        with open(latest_file, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        return True
+    except Exception as e:
+        print(f"⚠️ Backup failed: {e}")
+        return False
 
 app = Flask(__name__, template_folder=TEMPLATE_FOLDER, static_folder=STATIC_FOLDER)
 
@@ -1190,6 +1240,15 @@ def update_block(block_id):
     cursor.execute('SELECT * FROM blocks WHERE id = ?', (block_id,))
     block = dict(cursor.fetchone())
     conn.close()
+    
+    # 定期的にバックアップを作成（キャッシュでオーバーヘッド軽減）
+    import time
+    current_time = time.time()
+    last_backup_time = getattr(update_block, '_last_backup', 0)
+    if current_time - last_backup_time > 300:  # 5分ごと
+        backup_database_to_json()
+        update_block._last_backup = current_time
+    
     return jsonify(block)
 
 @app.route('/api/blocks/<int:block_id>', methods=['DELETE'])

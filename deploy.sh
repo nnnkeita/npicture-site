@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# データベースバックアップを作成
+echo "📦 Creating database backup..."
+python3 scripts/backup_db.py
+if [ $? -ne 0 ]; then
+    echo "⚠️ Backup failed, but continuing with deployment..."
+fi
+
 # 1. 自動でコミットメッセージを作る（日付と時刻）
 COMMIT_MSG="Auto update: $(date "+%Y-%m-%d %H:%M:%S")"
 
