@@ -1733,6 +1733,78 @@ def webhook_deploy():
     return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
 
 # --- データベース復元用エンドポイント ---
+@app.route('/list_backups', methods=['GET'])
+def list_backups():
+    """利用可能なバックアップファイルをリストアップ"""
+    try:
+        import glob
+        # ローカルのJSONバックアップをリスト
+        json_backups = sorted(glob.glob(os.path.join(BACKUP_FOLDER, 'backup_*.json')))
+        backups = []
+        for backup_file in json_backups:
+            stat = os.stat(backup_file)
+            backups.append({
+                'name': os.path.basename(backup_file),
+                'path': backup_file,
+                'size': stat.st_size,
+                'created': datetime.fromtimestamp(stat.st_mtime).isoformat()
+            })
+        return jsonify({'backups': backups})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/restore_backup/<backup_name>', methods=['POST'])
+def restore_backup(backup_name):
+    """バックアップファイルからデータベースを復元"""
+    try:
+        backup_file = os.path.join(BACKUP_FOLDER, backup_name)
+        
+        # セキュリティチェック
+        if not os.path.exists(backup_file) or not backup_file.startswith(BACKUP_FOLDER):
+            return jsonify({'error': 'Backup file not found'}), 404
+        
+        # JSONバックアップから復元
+        with open(backup_file, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+        
+        # 現在のDBをバックアップ
+        backup_path = DATABASE + '.backup_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        if os.path.exists(DATABASE):
+            shutil.copy2(DATABASE, backup_path)
+        
+        # JSONからDBを再構築
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        
+        for table_name, rows in backup_data['tables'].items():
+            if not rows:
+                continue
+            
+            # テーブル削除（既存データクリア）
+            cursor.execute(f'DELETE FROM {table_name}')
+            
+            # データ挿入
+            if rows:
+                first_row = rows[0]
+                columns = list(first_row.keys())
+                placeholders = ', '.join(['?' for _ in columns])
+                insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+                
+                for row in rows:
+                    values = [row.get(col) for col in columns]
+                    cursor.execute(insert_sql, values)
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Database restored from {backup_name}',
+            'backup_created': backup_path
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/upload_db', methods=['POST'])
 def upload_db():
     """データベースファイルをアップロード（復元用）"""
