@@ -1733,6 +1733,14 @@ def webhook_deploy():
     return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
 
 # --- データベース復元用エンドポイント ---
+@app.route('/download_db', methods=['GET'])
+def download_db():
+    """データベースファイルをダウンロード"""
+    try:
+        return send_file(DATABASE, as_attachment=True, download_name='notion.db')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/list_backups', methods=['GET'])
 def list_backups():
     """利用可能なバックアップファイルをリストアップ"""
