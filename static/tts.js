@@ -3,6 +3,7 @@
 
     let currentSpeechUtterance = null;
     let voices = [];
+    let speakQueue = [];
 
     function initVoices() {
         if (window.speechSynthesis) {
@@ -18,6 +19,154 @@
 
     window.addEventListener('load', initVoices);
     initVoices();
+
+    function normalizeText(text) {
+        return text
+            .replace(/\s+/g, ' ')
+            .replace(/([.!?。！？])(?=\S)/g, '$1 ')
+            .trim();
+    }
+
+    function countMatches(text, regex) {
+        const m = text.match(regex);
+        return m ? m.length : 0;
+    }
+
+    function detectLang(text) {
+        const jaCount = countMatches(text, /[\u3040-\u30ff\u3400-\u9fff]/g);
+        const enCount = countMatches(text, /[A-Za-z]/g);
+        if (jaCount === 0 && enCount === 0) return 'ja-JP';
+        return jaCount >= enCount ? 'ja-JP' : 'en-US';
+    }
+
+    function splitBySentence(text) {
+        const parts = [];
+        const tokens = text.split(/([.!?。！？\n]+)/).filter(Boolean);
+        for (let i = 0; i < tokens.length; i += 2) {
+            const sentence = (tokens[i] || '') + (tokens[i + 1] || '');
+            const trimmed = sentence.trim();
+            if (trimmed) parts.push(trimmed);
+        }
+        return parts.length ? parts : [text];
+    }
+
+    function splitByLanguage(text) {
+        const chunks = [];
+        let buffer = '';
+        let currentLang = null;
+
+        for (const char of text) {
+            const lang = detectLang(char);
+            if (!currentLang) currentLang = lang;
+            if (lang !== currentLang) {
+                if (buffer.trim()) {
+                    chunks.push({ text: buffer.trim(), lang: currentLang });
+                }
+                buffer = char;
+                currentLang = lang;
+            } else {
+                buffer += char;
+            }
+        }
+
+        if (buffer.trim()) {
+            chunks.push({ text: buffer.trim(), lang: currentLang });
+        }
+
+        return chunks.length ? chunks : [{ text, lang: detectLang(text) }];
+    }
+
+    function scoreVoice(voice, lang) {
+        let score = 0;
+        if (voice.lang === lang) score += 3;
+        if (voice.lang.startsWith(lang.substring(0, 2))) score += 1;
+        if (voice.localService) score += 1;
+        const name = voice.name.toLowerCase();
+        if (name.includes('google') || name.includes('microsoft') || name.includes('enhanced')) score += 2;
+        return score;
+    }
+
+    function pickVoice(lang) {
+        if (!voices.length) return null;
+        const sorted = [...voices].sort((a, b) => scoreVoice(b, lang) - scoreVoice(a, lang));
+        return sorted[0] || null;
+    }
+
+    function buildQueue(text, lang, rate) {
+        const normalized = normalizeText(text);
+        const sentences = splitBySentence(normalized);
+        const queue = [];
+
+        if (lang === 'auto') {
+            for (const sentence of sentences) {
+                const chunks = splitByLanguage(sentence);
+                for (const chunk of chunks) {
+                    if (chunk.text) {
+                        queue.push({ text: chunk.text, lang: chunk.lang, rate });
+                    }
+                }
+            }
+        } else {
+            for (const sentence of sentences) {
+                if (sentence) queue.push({ text: sentence, lang, rate });
+            }
+        }
+
+        return queue;
+    }
+
+    function speakNext() {
+        if (!speakQueue.length) {
+            currentSpeechUtterance = null;
+            return;
+        }
+
+        const item = speakQueue.shift();
+        const utterance = new SpeechSynthesisUtterance(item.text);
+        utterance.lang = item.lang;
+        utterance.rate = Math.max(0.5, Math.min(2, item.rate || 1));
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        const selectedVoice = pickVoice(item.lang);
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            console.log('🎙️ Selected voice:', selectedVoice.name, selectedVoice.lang);
+        }
+
+        utterance.onstart = () => {
+            console.log('▶️ Speech started');
+        };
+
+        utterance.onend = () => {
+            console.log('⏹️ Speech ended');
+            currentSpeechUtterance = null;
+            speakNext();
+        };
+
+        utterance.onerror = (event) => {
+            if (event.error !== 'canceled') {
+                console.error('❌ Speech error:', event.error);
+                alert('読み上げエラー: ' + event.error);
+            } else {
+                console.log('ℹ️ Previous utterance cancelled');
+            }
+            currentSpeechUtterance = null;
+            speakQueue = [];
+        };
+
+        utterance.onpause = () => {
+            console.log('⏸️ Speech paused');
+        };
+
+        utterance.onresume = () => {
+            console.log('▶️ Speech resumed');
+        };
+
+        currentSpeechUtterance = utterance;
+        window.speechSynthesis.speak(utterance);
+        console.log('🔊 Speech synthesis queued');
+    }
 
     function speakBlock(blockId) {
         try {
@@ -61,57 +210,8 @@
                 console.log('⏸️ Cancelled previous utterance');
             }
 
-            let selectedVoice = null;
-            if (voices.length > 0) {
-                selectedVoice = voices.find(voice => voice.lang === lang);
-                if (!selectedVoice) {
-                    selectedVoice = voices.find(voice => voice.lang.startsWith(lang.substring(0, 2)));
-                }
-                if (!selectedVoice) {
-                    selectedVoice = voices[0];
-                }
-                console.log('🎙️ Selected voice:', selectedVoice.name, selectedVoice.lang);
-            }
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = lang;
-            utterance.rate = Math.max(0.5, Math.min(2, rate || 1));
-            utterance.pitch = 1;
-            utterance.volume = 1;
-
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-            }
-
-            utterance.onstart = () => {
-                console.log('▶️ Speech started');
-            };
-
-            utterance.onend = () => {
-                console.log('⏹️ Speech ended');
-                currentSpeechUtterance = null;
-            };
-
-            utterance.onerror = (event) => {
-                if (event.error !== 'canceled') {
-                    console.error('❌ Speech error:', event.error);
-                    alert('読み上げエラー: ' + event.error);
-                } else {
-                    console.log('ℹ️ Previous utterance cancelled');
-                }
-            };
-
-            utterance.onpause = () => {
-                console.log('⏸️ Speech paused');
-            };
-
-            utterance.onresume = () => {
-                console.log('▶️ Speech resumed');
-            };
-
-            currentSpeechUtterance = utterance;
-            window.speechSynthesis.speak(utterance);
-            console.log('🔊 Speech synthesis queued');
+            speakQueue = buildQueue(text, lang, rate);
+            speakNext();
         } catch (error) {
             console.error('❌ speakBlock failed:', error);
             alert('読み上げ機能の初期化に失敗しました');
@@ -125,6 +225,7 @@
             console.log('🛑 Speech cancelled');
         }
         currentSpeechUtterance = null;
+        speakQueue = [];
     }
 
     function updateSpeakLang(blockId, lang) {

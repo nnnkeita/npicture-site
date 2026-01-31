@@ -1236,7 +1236,7 @@
                     console.log('🔊 Rendering speak block:', block.id, block);
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     const props = parseBlockProps(block.props);
-                    const lang = props.lang || 'ja-JP';
+                    const lang = props.lang || 'auto';
                     const rate = props.rate || 1;
                     contentHtml = `
                         <div class="w-full border border-purple-200 bg-white rounded-lg p-3 shadow-sm">
@@ -1246,6 +1246,7 @@
                                 </button>
                                 <button type="button" onclick="stopSpeaking()" class="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded text-sm">停止</button>
                                 <select id="speak-lang-${block.id}" class="px-2 py-1 border border-purple-100 rounded text-sm" onchange="updateSpeakLang(${block.id}, this.value)">
+                                    <option value="auto" ${lang === 'auto' ? 'selected' : ''}>自動（日本語/英語）</option>
                                     <option value="ja-JP" ${lang === 'ja-JP' ? 'selected' : ''}>日本語</option>
                                     <option value="en-US" ${lang === 'en-US' ? 'selected' : ''}>English (US)</option>
                                 </select>
