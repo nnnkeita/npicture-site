@@ -22,7 +22,10 @@ STATIC_FOLDER = os.path.join(BASE_DIR, 'static')
 BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
 
 # バックアップフォルダ作成
-os.makedirs(BACKUP_FOLDER, exist_ok=True)
+try:
+    os.makedirs(BACKUP_FOLDER, exist_ok=True)
+except Exception as e:
+    print(f"Warning: Could not create backup folder: {e}")
 
 def backup_database_to_json():
     """データベースをJSONテキスト形式でバックアップ"""
@@ -76,7 +79,11 @@ def backup_database_to_json():
 app = Flask(__name__, template_folder=TEMPLATE_FOLDER, static_folder=STATIC_FOLDER)
 
 # アップロード設定
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+try:
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+except Exception as e:
+    print(f"Warning: Could not create upload folder: {e}")
+    
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'zip', 'docx'}
@@ -1877,5 +1884,11 @@ if __name__ == '__main__':
     app.run(port=5000)
 else:
     # PythonAnywhere用のWSGI
-    with app.app_context():
-        init_db()
+    try:
+        with app.app_context():
+            init_db()
+    except Exception as e:
+        # ログに記録（PythonAnywhereのエラーログで確認可能）
+        print(f"Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
