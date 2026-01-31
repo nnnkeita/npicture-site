@@ -21,6 +21,7 @@ TEMPLATE_FOLDER = os.path.join(BASE_DIR, 'templates')
 STATIC_FOLDER = os.path.join(BASE_DIR, 'static')
 BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
 TTS_ENABLED = os.getenv('TTS_ENABLED', '1') == '1'
+CALORIE_ENABLED = os.getenv('CALORIE_ENABLED', '1') == '1'
 
 # バックアップフォルダ作成
 try:
@@ -550,15 +551,15 @@ def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, p
 
 @app.route('/')
 def index():
-    return render_template('index.html', tts_enabled=TTS_ENABLED)
+    return render_template('index.html', tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED)
 
 @app.route('/inbox')
 def inbox_page():
     """あとで調べるページへのショートカットURL"""
     inbox = get_or_create_inbox()
     if inbox:
-        return render_template('index.html', inbox_id=inbox['id'], tts_enabled=TTS_ENABLED)
-    return render_template('index.html', tts_enabled=TTS_ENABLED)
+        return render_template('index.html', inbox_id=inbox['id'], tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED)
+    return render_template('index.html', tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED)
 
 @app.route('/uploads/<filename>')
 def download_file(filename):

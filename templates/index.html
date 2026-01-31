@@ -846,69 +846,19 @@
             }
         }
 
-        const caloriePropsCache = {};
-
-        function renderCalorieResult(blockId, data) {
-            const totalEl = document.getElementById(`cal-total-${blockId}`);
-            if (totalEl) {
-                totalEl.textContent = data && data.total_kcal !== undefined ? `${data.total_kcal} kcal` : '-';
-            }
-
-            const listEl = document.getElementById(`cal-items-${blockId}`);
-            if (!listEl) return;
-            if (!data || !data.items || data.items.length === 0) {
-                listEl.innerHTML = '<div class="text-gray-400">食べたものを1行ずつ入力してください</div>';
-                return;
-            }
-
-            listEl.innerHTML = '';
-            data.items.forEach(item => {
-                const known = item.kcal !== null && item.kcal !== undefined;
-                const kcalText = known ? `${item.kcal} kcal` : '不明';
-                const nameText = item.matched || item.input;
-                const badge = item.is_estimated ? ' (推定)' : '';
-                const unit = item.unit || '';
-                const amount = item.amount || '';
-                const row = document.createElement('div');
-                row.className = 'flex items-center justify-between gap-2 border-b border-gray-100 pb-1 last:border-b-0 last:pb-0';
-                row.innerHTML = `<div class="text-gray-700 truncate">${nameText}${badge} <span class="text-gray-400 text-[11px]">${unit} ${amount}</span></div><div class="text-gray-600 font-semibold">${kcalText}</div>`;
-                listEl.appendChild(row);
-            });
+        // --- カロリー機能（外部スクリプトに分離） ---
+        const caloriePropsCache = window.caloriePropsCache || {};
+        window.caloriePropsCache = caloriePropsCache;
+        if (typeof window.renderCalorieResult !== 'function') {
+            window.renderCalorieResult = function () {};
         }
-
-        async function handleCalorieInput(blockId, value) {
-            updateBlock(blockId, 'content', value);
-            try {
-                const res = await fetch('/api/calc-calories', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ lines: value })
-                });
-                const data = await res.json();
-                const currentProps = caloriePropsCache[blockId] || {};
-                const merged = { ...currentProps, ...data };
-                caloriePropsCache[blockId] = merged;
-                renderCalorieResult(blockId, merged);
-                await fetch(`/api/blocks/${blockId}`, {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ props: JSON.stringify(merged) })
-                });
-            } catch (e) {
-                const totalEl = document.getElementById(`cal-total-${blockId}`);
-                if (totalEl) totalEl.textContent = '計算エラー';
-            }
+        if (typeof window.handleCalorieInput !== 'function') {
+            window.handleCalorieInput = function () {
+                alert('カロリー機能は現在無効です');
+            };
         }
-
-        async function updateCalorieTitle(blockId, title) {
-            const currentProps = caloriePropsCache[blockId] || {};
-            const merged = { ...currentProps, title };
-            caloriePropsCache[blockId] = merged;
-            await fetch(`/api/blocks/${blockId}`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ props: JSON.stringify(merged) })
-            });
+        if (typeof window.updateCalorieTitle !== 'function') {
+            window.updateCalorieTitle = function () {};
         }
 
         // トグルの開閉状態を保存
@@ -1193,7 +1143,10 @@
                                     <span class="font-semibold">🍽️</span>
                                     <input id="cal-title-${block.id}" class="flex-1 border-none focus:ring-0 bg-transparent text-base font-semibold" value="${heading}" placeholder="食事/カロリー" onfocus="setFocusedBlock(${block.id})" oninput="updateCalorieTitle(${block.id}, this.value)">
                                 </div>
-                                <div class="text-xs text-gray-500 whitespace-nowrap">合計: <span id="cal-total-${block.id}" class="font-bold text-gray-700">${props.total_kcal !== undefined ? props.total_kcal + ' kcal' : '-'}</span></div>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="addCalorieBox(${block.id})" class="px-2 py-1 text-xs bg-green-50 border border-green-200 text-green-700 rounded">＋ボックス</button>
+                                    <div class="text-xs text-gray-500 whitespace-nowrap">合計: <span id="cal-total-${block.id}" class="font-bold text-gray-700">${props.total_kcal !== undefined ? props.total_kcal + ' kcal' : '-'}</span></div>
+                                </div>
                             </div>
                             <textarea class="w-full border border-green-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="1行に1つずつ入力\n例: 朝食: ご飯 1杯\n昼食: そば 1人前" onfocus="setFocusedBlock(${block.id})" oninput="handleCalorieInput(${block.id}, this.value); autoResizeTextarea(this)">${escapedCalorie}</textarea>
                             <div id="cal-items-${block.id}" class="mt-2 text-xs text-gray-600 space-y-1"></div>
@@ -1355,6 +1308,40 @@
                     if (input) input.focus();
                 }
             }, 50);
+        }
+
+        function computePositionAfterBlock(blockId) {
+            const sorted = (currentBlocks || []).slice().sort((a, b) => a.position - b.position);
+            const idx = sorted.findIndex(b => b.id === blockId);
+            if (idx === -1) return computeInsertPosition();
+            const currentPos = sorted[idx].position;
+            const next = sorted[idx + 1];
+            if (next) return (currentPos + next.position) / 2;
+            return currentPos + 1000;
+        }
+
+        async function addBlockAfter(blockId, type = 'text') {
+            if (!currentPageId) return;
+            const position = computePositionAfterBlock(blockId);
+            const payload = { type, position };
+            if (type === 'speak') {
+                payload.props = JSON.stringify({ lang: 'ja-JP', rate: 1 });
+            }
+            const res = await fetch(`/api/pages/${currentPageId}/blocks`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            const block = await res.json();
+            currentBlocks = (currentBlocks || []).concat(block).sort((a, b) => a.position - b.position);
+            renderBlocks(currentBlocks);
+            setTimeout(() => {
+                const newBlockEl = document.querySelector(`[data-id="${block.id}"]`);
+                if (newBlockEl) {
+                    const input = newBlockEl.querySelector('textarea, input[type="text"]');
+                    if (input) input.focus();
+                }
+            }, 50);
+        }
+
+        function addCalorieBox(blockId) {
+            addBlockAfter(blockId, 'calorie');
         }
         function updateBlock(id, key, value) {
             clearTimeout(typingTimer);
@@ -1830,6 +1817,9 @@
     </script>
     {% if tts_enabled %}
     <script src="{{ url_for('static', filename='tts.js') }}"></script>
+    {% endif %}
+    {% if calorie_enabled %}
+    <script src="{{ url_for('static', filename='calorie.js') }}"></script>
     {% endif %}
 </body>
 </html>
