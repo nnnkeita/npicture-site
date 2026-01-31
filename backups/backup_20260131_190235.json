@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-31T19:06:53.349448",
+  "timestamp": "2026-01-31T19:02:35.532590",
   "database": "notion.db",
   "tables": {
     "blocks": [
@@ -5519,11 +5519,11 @@
         "id": 665,
         "page_id": 127,
         "type": "text",
-        "content": "後で調べるは一つにまとめる\n大きい見出し追加作業\n本のページは使いやすく\n要はこういうこと\n単語帳買う\n発音記号覚える\n項目ごとのリンク",
+        "content": "後で調べるは一つにまとめる\n本のページは使いやすく\n速読 本を読みながら音楽ってどう？\n７分瞑想\n要はこういうこと\n単語帳買う\n発音記号覚える\n項目ごとのリンク",
         "checked": 0,
         "position": 1000,
         "created_at": "2026-01-30 07:47:57",
-        "updated_at": "2026-01-31 10:03:22",
+        "updated_at": "2026-01-31 10:02:35",
         "collapsed": 0,
         "details": "",
         "props": "{}"
@@ -5783,10 +5783,10 @@
         "checked": 0,
         "position": 4000,
         "created_at": "2026-01-30 07:47:57",
-        "updated_at": "2026-01-31 10:05:10",
+        "updated_at": "2026-01-30 07:47:57",
         "collapsed": 0,
         "details": "",
-        "props": "{\"lang\":\"auto\",\"rate\":2}"
+        "props": "{\"lang\":\"zh-CN\",\"rate\":1}"
       },
       {
         "id": 686,
@@ -5891,19 +5891,6 @@
         "collapsed": 0,
         "details": "",
         "props": "{\"items\":[{\"amount\":\"1食\",\"input\":\"ご飯１杯\",\"is_estimated\":false,\"kcal\":240,\"matched\":\"ご飯\",\"unit\":\"1杯(150g)\"},{\"amount\":\"1食\",\"input\":\"卵\",\"is_estimated\":false,\"kcal\":80,\"matched\":\"卵\",\"unit\":\"1個\"},{\"amount\":\"100g\",\"input\":\"牛肉１皿\",\"is_estimated\":false,\"kcal\":280,\"matched\":\"牛肉\",\"unit\":\"100g\"},{\"amount\":\"180ml\",\"input\":\"味噌汁\",\"is_estimated\":false,\"kcal\":80,\"matched\":\"汁物\",\"unit\":\"1杯(180ml)\"},{\"amount\":\"-\",\"input\":\"昼ごはん\",\"is_estimated\":true,\"kcal\":150,\"matched\":\"不明(推定)\",\"unit\":\"推定\"},{\"amount\":\"1食\",\"input\":\"弁当\",\"is_estimated\":false,\"kcal\":500,\"matched\":\"弁当\",\"unit\":\"1個\"}],\"note\":\"目安の計算です。食材や調理法で変動します。\",\"total_kcal\":1330}"
-      },
-      {
-        "id": 694,
-        "page_id": 130,
-        "type": "speak",
-        "content": "こんにちは\n私の名前は音声読み上げだけのsiri\nであります！！！！",
-        "checked": 0,
-        "position": 5000,
-        "created_at": "2026-01-31 10:05:28",
-        "updated_at": "2026-01-31 10:06:11",
-        "collapsed": 0,
-        "details": "",
-        "props": "{\"lang\":\"ja-JP\",\"rate\":1}"
       }
     ],
     "pages": [

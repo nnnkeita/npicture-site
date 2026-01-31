@@ -1,0 +1,332 @@
+# -*- coding: utf-8 -*-
+"""
+ユーティリティ関数
+- カロリー計算
+- ページエクスポート/インポート
+- バックアップ
+"""
+import json
+import re
+import os
+from datetime import datetime
+from database import get_db, get_next_position, get_block_next_position
+
+# パス設定
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'zip', 'docx'}
+
+# カロリー計算の簡易データベース
+CALORIE_TABLE = [
+    {'label': 'ご飯', 'keywords': ['ご飯', '白米', 'ライス'], 'kcal': 240, 'unit': '1杯(150g)'},
+    {'label': '納豆', 'keywords': ['納豆'], 'kcal': 100, 'unit': '1パック'},
+    {'label': 'パン', 'keywords': ['食パン', 'パン'], 'kcal': 180, 'unit': '1枚(6枚切)'},
+    {'label': 'プロテイン', 'keywords': ['プロテイン'], 'kcal': 120, 'unit': '1杯(30g)'},
+    {'label': '弁当', 'keywords': ['弁当'], 'kcal': 500, 'unit': '1個'},
+    {'label': '卵', 'keywords': ['卵', 'たまご'], 'kcal': 80, 'unit': '1個'},
+    {'label': '鶏むね肉', 'keywords': ['鶏むね', '鶏胸', 'ささみ'], 'kcal': 165, 'unit': '100g', 'per_grams': 100},
+    {'label': '豚肉', 'keywords': ['豚肉'], 'kcal': 250, 'unit': '100g', 'per_grams': 100},
+    {'label': '牛肉', 'keywords': ['牛肉'], 'kcal': 280, 'unit': '100g', 'per_grams': 100},
+    {'label': '豆腐', 'keywords': ['豆腐'], 'kcal': 140, 'unit': '1丁(300g)', 'per_grams': 300},
+    {'label': 'ヨーグルト', 'keywords': ['ヨーグルト'], 'kcal': 60, 'unit': '100g', 'per_grams': 100},
+    {'label': 'バナナ', 'keywords': ['バナナ'], 'kcal': 90, 'unit': '1本'},
+    {'label': 'そば', 'keywords': ['そば', '蕎麦'], 'kcal': 320, 'unit': '1人前'},
+    {'label': 'うどん', 'keywords': ['うどん'], 'kcal': 280, 'unit': '1人前'},
+    {'label': 'パスタ', 'keywords': ['パスタ', 'スパゲッティ'], 'kcal': 350, 'unit': '1人前'},
+    {'label': '牛乳', 'keywords': ['牛乳', 'ミルク'], 'kcal': 130, 'unit': '200ml', 'per_ml': 200},
+    {'label': 'サラダ', 'keywords': ['サラダ'], 'kcal': 80, 'unit': '1皿'},
+    {'label': '汁物', 'keywords': ['汁', 'スープ', '味噌汁', 'みそ汁'], 'kcal': 80, 'unit': '1杯(180ml)', 'per_ml': 180},
+]
+
+DEFAULT_UNKNOWN_KCAL = 150
+
+def allowed_file(filename):
+    """許可されたファイル拡張子かチェック"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def _extract_number(text, pattern):
+    """テキストから数値を抽出"""
+    match = re.search(pattern, text)
+    return float(match.group(1)) if match else None
+
+def _fallback_estimate(line):
+    """未知の食材の概算カロリーを推定"""
+    if '汁' in line or 'スープ' in line:
+        return {'label': '汁物(推定)', 'kcal': 80, 'is_estimated': True}
+    if 'カレー' in line:
+        return {'label': 'カレー(推定)', 'kcal': 500, 'is_estimated': True}
+    if 'シチュー' in line:
+        return {'label': 'シチュー(推定)', 'kcal': 350, 'is_estimated': True}
+    if '煮込み' in line:
+        return {'label': '煮込み(推定)', 'kcal': 300, 'is_estimated': True}
+    if '炒め' in line or 'ソテー' in line:
+        return {'label': '炒め物(推定)', 'kcal': 320, 'is_estimated': True}
+    return {'label': '不明(推定)', 'kcal': DEFAULT_UNKNOWN_KCAL, 'is_estimated': True}
+
+def estimate_calories(lines):
+    """行ごとのメニュー文字列から概算カロリーを計算"""
+    results = []
+    total_kcal = 0.0
+
+    for raw in lines:
+        line = (raw or '').strip()
+        if not line:
+            continue
+
+        matched_entry = None
+        for entry in CALORIE_TABLE:
+            if any(keyword in line for keyword in entry['keywords']):
+                matched_entry = entry
+                break
+
+        amount = _extract_number(line, r'(\d+(?:\.\d+)?)') or 1.0
+        gram_val = _extract_number(line, r'(\d+(?:\.\d+)?)\s*(?:g|グラム)')
+        ml_val = _extract_number(line, r'(\d+(?:\.\d+)?)\s*(?:ml|mL|ML|㎖)')
+
+        if matched_entry:
+            kcal = matched_entry['kcal']
+            unit = matched_entry.get('unit', '1食')
+
+            if matched_entry.get('per_grams'):
+                grams = gram_val if gram_val is not None else matched_entry['per_grams'] * amount
+                kcal_total = (grams / matched_entry['per_grams']) * matched_entry['kcal']
+                amount_label = f"{grams:.0f}g"
+            elif matched_entry.get('per_ml'):
+                ml = ml_val if ml_val is not None else matched_entry['per_ml'] * amount
+                kcal_total = (ml / matched_entry['per_ml']) * matched_entry['kcal']
+                amount_label = f"{ml:.0f}ml"
+            else:
+                kcal_total = amount * kcal
+                amount_label = f"{amount:.1f}食" if amount != 1 else '1食'
+
+            kcal_total = round(kcal_total, 1)
+            total_kcal += kcal_total
+            results.append({
+                'input': line,
+                'matched': matched_entry['label'],
+                'unit': unit,
+                'amount': amount_label,
+                'kcal': kcal_total,
+                'is_estimated': False
+            })
+        else:
+            fallback = _fallback_estimate(line)
+            kcal_total = round(fallback['kcal'], 1)
+            total_kcal += kcal_total
+            results.append({
+                'input': line,
+                'matched': fallback['label'],
+                'unit': '推定',
+                'amount': '-',
+                'kcal': kcal_total,
+                'is_estimated': True
+            })
+
+    return {
+        'total_kcal': round(total_kcal, 1),
+        'items': results,
+        'note': '目安の計算です。食材や調理法で変動します。'
+    }
+
+def export_page_to_dict(cursor, page_id):
+    """ページとその全ブロック・子ページを辞書に変換（エクスポート用）"""
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page_row = cursor.fetchone()
+    if not page_row:
+        return None
+    
+    page = dict(page_row)
+    cursor.execute('SELECT * FROM blocks WHERE page_id = ? ORDER BY position', (page_id,))
+    page['blocks'] = [dict(row) for row in cursor.fetchall()]
+    
+    cursor.execute('SELECT * FROM pages WHERE parent_id = ? ORDER BY position', (page_id,))
+    page['children'] = [export_page_to_dict(cursor, row['id']) for row in cursor.fetchall()]
+    
+    return page
+
+def page_to_markdown(page, level=1):
+    """ページをMarkdownフォーマットに変換（再帰的）"""
+    lines = []
+    
+    # ページタイトルを見出しで表現
+    heading = '#' * level
+    lines.append(f"{heading} {page.get('icon', '📄')} {page.get('title', '無題')}")
+    lines.append('')
+    
+    # ブロックをMarkdownに変換
+    for block in page.get('blocks', []):
+        block_type = block.get('type', 'text')
+        content = block.get('content', '')
+        
+        if block_type == 'h1':
+            lines.append(f"### {content}")
+            lines.append('')
+        elif block_type == 'todo':
+            checked = '✓' if block.get('checked') else '☐'
+            lines.append(f"- [{checked}] {content}")
+        elif block_type == 'toggle':
+            lines.append(f"**{content}**")
+            details = block.get('details', '')
+            if details:
+                lines.append(details)
+            lines.append('')
+        elif block_type == 'image':
+            lines.append(f"![Image]({content})")
+            lines.append('')
+        elif block_type == 'speak':
+            lines.append(f"🔊 [読み上げ]: {content}")
+            lines.append('')
+        else:  # text
+            if content:
+                lines.append(content)
+                lines.append('')
+    
+    # 子ページを再帰的に変換
+    for child in page.get('children', []):
+        lines.append(page_to_markdown(child, level + 1))
+        lines.append('')
+    
+    return '\n'.join(lines)
+
+def create_page_from_dict(cursor, page_dict, parent_id=None, position=None):
+    """辞書からページを作成（インポート用）"""
+    parent_id = parent_id if parent_id is not None else page_dict.get('parent_id')
+    
+    if position is None:
+        position = get_next_position(cursor, parent_id)
+    
+    cursor.execute(
+        'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (
+            page_dict.get('title', ''),
+            page_dict.get('icon', '📄'),
+            page_dict.get('cover_image', ''),
+            parent_id,
+            position,
+            page_dict.get('is_pinned', 0),
+            0
+        )
+    )
+    new_page_id = cursor.lastrowid
+    
+    # ブロック追加
+    for block in page_dict.get('blocks', []):
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                new_page_id,
+                block.get('type', 'text'),
+                block.get('content', ''),
+                block.get('checked', 0),
+                block.get('position', 1000.0),
+                block.get('collapsed', 0),
+                block.get('details', ''),
+                block.get('props', '{}')
+            )
+        )
+    
+    # 子ページ追加
+    for i, child in enumerate(page_dict.get('children', [])):
+        child_pos = (i + 1) * 1000.0
+        create_page_from_dict(cursor, child, parent_id=new_page_id, position=child_pos)
+    
+    return new_page_id
+
+def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, position=None, override_icon=None):
+    """ページとブロックを再帰的にコピー"""
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (source_page_id,))
+    source_page = cursor.fetchone()
+    if not source_page:
+        return None
+
+    src = dict(source_page)
+    parent_id = new_parent_id if new_parent_id is not None else src['parent_id']
+    if position is None:
+        position = get_next_position(cursor, parent_id)
+
+    cursor.execute(
+        'INSERT INTO pages (title, icon, cover_image, parent_id, position, is_pinned, is_deleted) VALUES (?, ?, ?, ?, ?, ?, 0)',
+        (
+            new_title if new_title is not None else src.get('title', ''),
+            override_icon if override_icon is not None else src.get('icon', '📄'),
+            src.get('cover_image', ''),
+            parent_id,
+            position,
+            src.get('is_pinned', 0)
+        )
+    )
+    new_page_id = cursor.lastrowid
+
+    # ブロックコピー
+    cursor.execute('SELECT * FROM blocks WHERE page_id = ? ORDER BY position', (source_page_id,))
+    for block in cursor.fetchall():
+        block_dict = dict(block)
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                new_page_id,
+                block_dict.get('type', 'text'),
+                block_dict.get('content', ''),
+                block_dict.get('checked', 0),
+                block_dict.get('position', 0),
+                block_dict.get('collapsed', 0),
+                block_dict.get('details', ''),
+                block_dict.get('props', '{}')
+            )
+        )
+
+    # 子ページを再帰コピー
+    cursor.execute('SELECT * FROM pages WHERE parent_id = ? ORDER BY position', (source_page_id,))
+    for child in cursor.fetchall():
+        copy_page_tree(cursor, child['id'], new_parent_id=new_page_id, position=child['position'])
+
+    return new_page_id
+
+def backup_database_to_json():
+    """データベースをJSONテキスト形式でバックアップ"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # テーブル一覧取得（FTSテーブルを除外）
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' 
+            AND name NOT LIKE 'sqlite_%'
+            AND name NOT LIKE '%_fts%'
+            AND name NOT LIKE '%_config'
+            ORDER BY name
+        """)
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        # バックアップデータ作成
+        backup_data = {
+            'timestamp': datetime.now().isoformat(),
+            'database': 'notion.db',
+            'tables': {}
+        }
+        
+        # 各テーブルをエクスポート
+        for table in tables:
+            cursor.execute(f'SELECT * FROM {table}')
+            rows = cursor.fetchall()
+            backup_data['tables'][table] = [dict(row) for row in rows]
+        
+        conn.close()
+        
+        # JSONファイルに保存
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = os.path.join(BACKUP_FOLDER, f'backup_{timestamp}.json')
+        
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        # 最新のバックアップを latest.json にコピー
+        latest_file = os.path.join(BACKUP_FOLDER, 'latest.json')
+        with open(latest_file, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        return True
+    except Exception as e:
+        print(f"⚠️ Backup failed: {e}")
+        return False
