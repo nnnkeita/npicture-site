@@ -30,10 +30,13 @@ def backup_database_to_json():
         conn = get_db()
         cursor = conn.cursor()
         
-        # テーブル一覧取得
+        # テーブル一覧取得（FTSテーブルを除外）
         cursor.execute("""
             SELECT name FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            WHERE type='table' 
+            AND name NOT LIKE 'sqlite_%'
+            AND name NOT LIKE '%_fts%'
+            AND name NOT LIKE '%_config'
             ORDER BY name
         """)
         tables = [row[0] for row in cursor.fetchall()]
