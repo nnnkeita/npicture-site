@@ -43,10 +43,16 @@ def register_routes(app):
     def get_pages():
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM pages WHERE is_deleted = 0 ORDER BY position')
+        # インデックスを活用して高速化
+        cursor.execute('''
+            SELECT * FROM pages 
+            WHERE is_deleted = 0 
+            ORDER BY parent_id, position
+        ''')
         all_pages = [dict(row) for row in cursor.fetchall()]
         conn.close()
         
+        # フロントエンドで階層構造を構築（DBクエリを削減）
         page_map = {page['id']: {**page, 'children': []} for page in all_pages}
         roots = []
         for page in all_pages:
@@ -354,7 +360,12 @@ def register_routes(app):
             conn.close()
             return jsonify({'error': 'Page not found'}), 404
         page = dict(page_row)
-        cursor.execute('SELECT * FROM blocks WHERE page_id = ? ORDER BY position', (page_id,))
+        # インデックスを活用してブロック取得を高速化
+        cursor.execute('''
+            SELECT * FROM blocks 
+            WHERE page_id = ? 
+            ORDER BY position
+        ''', (page_id,))
         page['blocks'] = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return jsonify(page)

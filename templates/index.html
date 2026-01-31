@@ -490,6 +490,11 @@
         let copiedPageId = null; // コピーしたページID
         let undoStack = []; // 元に戻す履歴
         const MAX_UNDO = 50; // 最大履歴数
+        
+        // 保存リクエストのキュー管理（パフォーマンス改善）
+        let saveQueue = new Map(); // blockId/pageId -> timeout
+        const DEBOUNCE_TIME = 800; // デバウンス時間（ms）
+
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -868,9 +873,15 @@
         }
 
         async function fetchPages() {
+            const container = document.getElementById('page-list');
+            const hasPages = container.children.length > 0;
+            
+            if (!hasPages) {
+                container.innerHTML = '<div class="p-4 text-gray-400 text-sm">読み込み中...</div>';
+            }
+            
             const res = await fetch('/api/pages');
             const rootPages = await res.json();
-            const container = document.getElementById('page-list');
             container.innerHTML = '';
             visiblePageOrder = [];
             siblingsByParent = new Map();
@@ -1069,7 +1080,15 @@
         async function loadPage(id) {
             currentPageId = id;
             closeSidebar(); // モバイルではサイドバーを閉じる
+            
+            // ローディング表示
+            document.getElementById('save-status').innerText = '読み込み中...';
+            const blocksContainer = document.getElementById('blocks');
+            blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400"><div class="loader inline-block"></div></div>';
+            
+            // fetchPagesを非同期で実行（ブロッキングしない）
             fetchPages();
+            
             const res = await fetch(`/api/pages/${id}`);
             const page = await res.json();
             
@@ -1109,6 +1128,8 @@
             
             currentBlocks = (page.blocks || []).slice().sort((a, b) => a.position - b.position);
             renderBlocks(currentBlocks);
+            
+            document.getElementById('save-status').innerText = '保存済み';
         }
 
         function renderBlocks(blocks) {
@@ -1268,13 +1289,14 @@
             loadPage(folder.id);
         }
         function saveTitle() {
-            clearTimeout(typingTimer);
-            document.getElementById('save-status').innerText = '保存中...';
-            typingTimer = setTimeout(async () => {
-                await fetch(`/api/pages/${currentPageId}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ title: document.getElementById('page-title').value }) });
-                document.getElementById('save-status').innerText = '保存済み';
+            debouncedSave(`page-${currentPageId}-title`, async () => {
+                await fetch(`/api/pages/${currentPageId}`, { 
+                    method: 'PUT', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ title: document.getElementById('page-title').value }) 
+                });
                 fetchPages();
-            }, 500);
+            });
         }
         async function updateIcon() {
             const newIcon = prompt('アイコンを入力:', document.getElementById('page-icon').innerText);
@@ -1343,14 +1365,40 @@
         function addCalorieBox(blockId) {
             addBlockAfter(blockId, 'calorie');
         }
-        function updateBlock(id, key, value) {
-            clearTimeout(typingTimer);
+        
+        // 効率的な保存処理（キュー管理）
+        function debouncedSave(key, saveFunction, delay = DEBOUNCE_TIME) {
+            if (saveQueue.has(key)) {
+                clearTimeout(saveQueue.get(key));
+            }
+            
             document.getElementById('save-status').innerText = '保存中...';
-            typingTimer = setTimeout(async () => {
-                const body = {}; body[key] = value;
-                await fetch(`/api/blocks/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-                document.getElementById('save-status').innerText = '保存済み';
-            }, 500);
+            
+            const timeoutId = setTimeout(async () => {
+                try {
+                    await saveFunction();
+                    document.getElementById('save-status').innerText = '保存済み';
+                } catch (error) {
+                    console.error('Save error:', error);
+                    document.getElementById('save-status').innerText = '保存失敗';
+                } finally {
+                    saveQueue.delete(key);
+                }
+            }, delay);
+            
+            saveQueue.set(key, timeoutId);
+        }
+        
+        function updateBlock(id, key, value) {
+            debouncedSave(`block-${id}-${key}`, async () => {
+                const body = {};
+                body[key] = value;
+                await fetch(`/api/blocks/${id}`, { 
+                    method: 'PUT', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify(body) 
+                });
+            });
         }
         async function deleteBlock(id) {
             await fetch(`/api/blocks/${id}`, { method: 'DELETE' });
@@ -1369,16 +1417,13 @@
                 renderBookScrollPages(blockId, props);
             }
             
-            clearTimeout(typingTimer);
-            document.getElementById('save-status').innerText = '保存中...';
-            typingTimer = setTimeout(async () => {
+            debouncedSave(`book-${blockId}`, async () => {
                 await fetch(`/api/blocks/${blockId}`, {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ props: JSON.stringify(props) })
                 });
-                document.getElementById('save-status').innerText = '保存済み';
-            }, 500);
+            });
         }
 
         function renderBookScrollPages(blockId, props) {

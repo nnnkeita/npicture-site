@@ -99,6 +99,22 @@ def init_db():
     cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); END;')
     cursor.execute('CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, title, content) VALUES("delete", old.id, (SELECT title FROM pages WHERE id = old.page_id), old.content); INSERT INTO blocks_fts(rowid, title, content) VALUES (new.id, (SELECT title FROM pages WHERE id = new.page_id), new.content); END;')
     
+    # パフォーマンス改善用インデックス
+    try:
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pages_parent_position ON pages(parent_id, position, is_deleted)')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_pages_is_deleted ON pages(is_deleted)')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_id, position)')
+    except sqlite3.OperationalError:
+        pass
+    
     # テンプレート用テーブル
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS templates (
