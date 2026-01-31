@@ -76,6 +76,38 @@
         return chunks.length ? chunks : [{ text, lang: detectLang(text) }];
     }
 
+    function preferredNames(lang) {
+        if (lang === 'ja-JP') {
+            return [
+                'Google 日本語',
+                'Google Japanese',
+                'Microsoft Haruka',
+                'Microsoft Ayumi',
+                'Microsoft Sayaka',
+                'Kyoko',
+                'Otoya',
+                'Siri',
+                'Premium',
+                'Enhanced'
+            ];
+        }
+        if (lang === 'en-US') {
+            return [
+                'Google US English',
+                'Google English',
+                'Microsoft Zira',
+                'Microsoft Aria',
+                'Microsoft Jenny',
+                'Samantha',
+                'Alex',
+                'Siri',
+                'Premium',
+                'Enhanced'
+            ];
+        }
+        return ['Google', 'Microsoft', 'Siri', 'Premium', 'Enhanced'];
+    }
+
     function scoreVoice(voice, lang) {
         let score = 0;
         if (voice.lang === lang) score += 3;
@@ -83,11 +115,18 @@
         if (voice.localService) score += 1;
         const name = voice.name.toLowerCase();
         if (name.includes('google') || name.includes('microsoft') || name.includes('enhanced')) score += 2;
+        if (name.includes('premium')) score += 2;
+        if (name.includes('compact')) score -= 1;
         return score;
     }
 
     function pickVoice(lang) {
         if (!voices.length) return null;
+        const preferred = preferredNames(lang).map(v => v.toLowerCase());
+        for (const pref of preferred) {
+            const match = voices.find(v => v.lang.startsWith(lang.substring(0, 2)) && v.name.toLowerCase().includes(pref));
+            if (match) return match;
+        }
         const sorted = [...voices].sort((a, b) => scoreVoice(b, lang) - scoreVoice(a, lang));
         return sorted[0] || null;
     }
