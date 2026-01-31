@@ -1544,7 +1544,7 @@ def update_template(template_id):
     if updates:
         updates.append('updated_at = CURRENT_TIMESTAMP')
         values.append(template_id)
-        cursor.execute(f'UPDATE templates SET {', '.join(updates)} WHERE id = ?', values)
+        cursor.execute(f"UPDATE templates SET {', '.join(updates)} WHERE id = ?", values)
         conn.commit()
     
     cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
@@ -1669,6 +1669,34 @@ def webhook_deploy():
     subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd='/home/nnnkeita/mysite')
     subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'])
     return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
+
+# --- データベース復元用エンドポイント ---
+@app.route('/upload_db', methods=['POST'])
+def upload_db():
+    """データベースファイルをアップロード（復元用）"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # バックアップを作成
+        backup_path = DATABASE + '.backup_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        if os.path.exists(DATABASE):
+            shutil.copy2(DATABASE, backup_path)
+        
+        # 新しいデータベースファイルを保存
+        file.save(DATABASE)
+        
+        return jsonify({
+            'status': 'success', 
+            'message': 'Database restored successfully',
+            'backup': backup_path
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     import webbrowser
