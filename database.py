@@ -7,6 +7,7 @@
 """
 import sqlite3
 import os
+import json
 
 # パス設定
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,6 +79,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     
+    # ムード（感情）カラムを追加
+    try:
+        cursor.execute("ALTER TABLE pages ADD COLUMN mood INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,6 +134,67 @@ def init_db():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+    
+    # デフォルトテンプレートを初期化
+    try:
+        cursor.execute('SELECT COUNT(*) FROM templates')
+        if cursor.fetchone()[0] == 0:
+            # 感謝日記テンプレート
+            gratitude_template = {
+                'title': '感謝日記',
+                'blocks': [
+                    {'type': 'h1', 'content': '感謝日記', 'position': 1000},
+                    {'type': 'text', 'content': '今日感謝したことを3つ書きましょう。', 'position': 2000},
+                    {'type': 'text', 'content': '1. ', 'position': 3000},
+                    {'type': 'text', 'content': '2. ', 'position': 4000},
+                    {'type': 'text', 'content': '3. ', 'position': 5000},
+                ]
+            }
+            
+            # PDCA日報テンプレート
+            pdca_template = {
+                'title': 'PDCA日報',
+                'blocks': [
+                    {'type': 'h1', 'content': 'PDCA日報', 'position': 1000},
+                    {'type': 'h2', 'content': '計画（Plan）', 'position': 2000},
+                    {'type': 'text', 'content': '', 'position': 3000},
+                    {'type': 'h2', 'content': '実行（Do）', 'position': 4000},
+                    {'type': 'text', 'content': '', 'position': 5000},
+                    {'type': 'h2', 'content': '確認（Check）', 'position': 6000},
+                    {'type': 'text', 'content': '', 'position': 7000},
+                    {'type': 'h2', 'content': '改善（Act）', 'position': 8000},
+                    {'type': 'text', 'content': '', 'position': 9000},
+                ]
+            }
+            
+            # 5行日記テンプレート
+            five_line_template = {
+                'title': '5行日記',
+                'blocks': [
+                    {'type': 'h1', 'content': '5行日記', 'position': 1000},
+                    {'type': 'text', 'content': '1. 今日起きたこと：', 'position': 2000},
+                    {'type': 'text', 'content': '2. その時の気持ち：', 'position': 3000},
+                    {'type': 'text', 'content': '3. その出来事の意味：', 'position': 4000},
+                    {'type': 'text', 'content': '4. その経験から学んだこと：', 'position': 5000},
+                    {'type': 'text', 'content': '5. 明日への決意：', 'position': 6000},
+                ]
+            }
+            
+            templates_data = [
+                ('感謝日記', '🙏', '毎日の感謝を記録するテンプレート', gratitude_template),
+                ('PDCA日報', '📊', 'Plan-Do-Check-Actフレームワーク', pdca_template),
+                ('5行日記', '📖', '1日の出来事を5行で整理するテンプレート', five_line_template),
+            ]
+            
+            for name, icon, desc, content in templates_data:
+                cursor.execute(
+                    'INSERT INTO templates (name, icon, description, content_json) VALUES (?, ?, ?, ?)',
+                    (name, icon, desc, json.dumps(content, ensure_ascii=False))
+                )
+            
+            conn.commit()
+    except Exception as e:
+        pass
     
     conn.commit()
     conn.close()

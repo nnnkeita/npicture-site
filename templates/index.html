@@ -382,6 +382,19 @@
                         <!-- 天気情報がここに表示される -->
                     </div>
                 </div>
+
+                <!-- 感情トラッカー（ムードセレクタ） -->
+                <div id="mood-tracker" class="hidden mb-6 flex items-center gap-2 p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-100">
+                    <span class="text-sm font-semibold text-gray-600">今日の気分:</span>
+                    <div id="mood-selector" class="flex gap-2">
+                        <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="5" title="最高！😄">😄</button>
+                        <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="4" title="良い😊">😊</button>
+                        <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="3" title="普通😐">😐</button>
+                        <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="2" title="悪い😟">😟</button>
+                        <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="1" title="最悪😢">😢</button>
+                    </div>
+                    <div id="mood-display" class="ml-auto text-sm text-gray-500"></div>
+                </div>
                 
                 <!-- 通常表示（詳細タブ） -->
                 <div id="category-detail-view" class="category-view">
@@ -758,6 +771,70 @@
             } catch (error) {
                 console.warn('Failed to fetch weather:', error);
                 document.getElementById('weather-info').innerHTML = '';
+            }
+        }
+
+        // --- 感情トラッカー機能 ---
+        function setupMoodTracker() {
+            const moodBtns = document.querySelectorAll('.mood-btn');
+            moodBtns.forEach(btn => {
+                btn.onclick = async (e) => {
+                    e.preventDefault();
+                    const mood = parseInt(btn.dataset.mood);
+                    await saveMood(mood);
+                };
+            });
+        }
+
+        async function loadMoodData() {
+            if (!currentPageId) return;
+            try {
+                const response = await fetch(`/api/pages/${currentPageId}`);
+                if (response.ok) {
+                    const page = await response.json();
+                    const mood = page.mood || 0;
+                    updateMoodUI(mood);
+                }
+            } catch (error) {
+                console.warn('Failed to load mood data:', error);
+            }
+        }
+
+        function updateMoodUI(mood) {
+            const moodBtns = document.querySelectorAll('.mood-btn');
+            const moodDisplay = document.getElementById('mood-display');
+            const moods = ['😢', '😟', '😐', '😊', '😄'];
+            const moodTexts = ['最悪', '悪い', '普通', '良い', '最高！'];
+            
+            moodBtns.forEach(btn => {
+                const btnMood = parseInt(btn.dataset.mood);
+                if (btnMood === mood) {
+                    btn.classList.add('ring-2', 'ring-purple-500', 'scale-110');
+                } else {
+                    btn.classList.remove('ring-2', 'ring-purple-500', 'scale-110');
+                }
+            });
+            
+            if (mood > 0 && mood <= 5) {
+                moodDisplay.innerHTML = `${moods[mood - 1]} ${moodTexts[mood - 1]}`;
+            } else {
+                moodDisplay.innerHTML = '';
+            }
+        }
+
+        async function saveMood(mood) {
+            if (!currentPageId) return;
+            try {
+                const response = await fetch(`/api/pages/${currentPageId}/mood`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mood })
+                });
+                if (response.ok) {
+                    updateMoodUI(mood);
+                }
+            } catch (error) {
+                console.error('Failed to save mood:', error);
             }
         }
 
@@ -1276,6 +1353,17 @@
             
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
+            
+            // 日付ページの場合は感情トラッカーを表示
+            const moodTracker = document.getElementById('mood-tracker');
+            const dateMatch = page.title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+            if (dateMatch) {
+                moodTracker.classList.remove('hidden');
+                setupMoodTracker();
+                loadMoodData();
+            } else {
+                moodTracker.classList.add('hidden');
+            }
             
             // カテゴリーページ（筋トレ、英語学習、食事）の場合はタブを表示
             const categoryTabsDiv = document.getElementById('category-tabs');

@@ -603,6 +603,32 @@ def register_routes(app):
         
         return jsonify(block)
 
+    @app.route('/api/pages/<int:page_id>/mood', methods=['PUT'])
+    def update_page_mood(page_id):
+        """ページの感情（ムード）を更新"""
+        try:
+            data = request.json
+            mood = data.get('mood', 0)
+            
+            if not (0 <= mood <= 5):
+                return jsonify({'error': 'Mood must be between 0 and 5'}), 400
+            
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE pages SET mood = ? WHERE id = ?', (mood, page_id))
+            conn.commit()
+            
+            cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+            page = dict(cursor.fetchone()) if cursor.fetchone() else None
+            conn.close()
+            
+            if page:
+                return jsonify({'success': True, 'mood': mood})
+            else:
+                return jsonify({'error': 'Page not found'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/blocks/<int:block_id>', methods=['DELETE'])
     def delete_block(block_id):
         conn = get_db()
