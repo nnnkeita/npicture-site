@@ -71,23 +71,20 @@ def register_routes(app):
         conn.close()
         return jsonify(trash_pages)
 
-    @app.route('/api/all-workouts', methods=['GET'])
-    def get_all_workouts():
-        """全ての日記から筋トレページとそのブロックを取得"""
+    def get_items_by_category(category_title):
+        """指定されたカテゴリーのページとブロックを取得する汎用関数"""
         conn = get_db()
         cursor = conn.cursor()
         
-        # すべての「筋トレ」ページを取得
         cursor.execute('''
             SELECT * FROM pages 
-            WHERE title = '筋トレ' AND is_deleted = 0
+            WHERE title = ? AND is_deleted = 0
             ORDER BY updated_at DESC
-        ''')
-        workout_pages = [dict(row) for row in cursor.fetchall()]
+        ''', (category_title,))
+        pages = [dict(row) for row in cursor.fetchall()]
         
-        # 各筋トレページのブロックを取得
         result = []
-        for page in workout_pages:
+        for page in pages:
             cursor.execute('''
                 SELECT * FROM blocks 
                 WHERE page_id = ? AND type IN ('todo', 'text', 'h1')
@@ -95,7 +92,6 @@ def register_routes(app):
             ''', (page['id'],))
             blocks = [dict(row) for row in cursor.fetchall()]
             
-            # 親ページの情報も取得（日記のタイトルを表示するため）
             parent_page = None
             if page['parent_id']:
                 cursor.execute('SELECT * FROM pages WHERE id = ?', (page['parent_id'],))
@@ -110,7 +106,22 @@ def register_routes(app):
             })
         
         conn.close()
-        return jsonify(result)
+        return result
+
+    @app.route('/api/all-workouts', methods=['GET'])
+    def get_all_workouts():
+        """全ての日記から筋トレページとそのブロックを取得"""
+        return jsonify(get_items_by_category('筋トレ'))
+
+    @app.route('/api/all-english-learning', methods=['GET'])
+    def get_all_english_learning():
+        """全ての日記から英語学習ページとそのブロックを取得"""
+        return jsonify(get_items_by_category('英語学習'))
+
+    @app.route('/api/all-meals', methods=['GET'])
+    def get_all_meals():
+        """全ての日記から食事ページとそのブロックを取得"""
+        return jsonify(get_items_by_category('食事'))
 
     @app.route('/api/today-highlights/<int:page_id>', methods=['GET'])
     def get_today_highlights(page_id):

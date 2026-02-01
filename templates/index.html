@@ -100,37 +100,37 @@
             50% { background-color: #fef3c7; }
         }
 
-        /* 筋トレページのタブスタイル */
-        .workout-tab {
+        /* カテゴリータブスタイル（筋トレ、英語学習、食事用） */
+        .category-tab, .workout-tab {
             cursor: pointer;
             transition: all 0.2s ease;
             color: #666;
             text-decoration: none;
         }
 
-        .workout-tab:hover {
+        .category-tab:hover, .workout-tab:hover {
             color: #333;
         }
 
-        .workout-tab.border-blue-500 {
+        .category-tab.border-blue-500, .workout-tab.border-blue-500 {
             border-bottom-color: #3b82f6 !important;
             color: #1f2937 !important;
             font-weight: 600;
         }
 
-        html.dark .workout-tab {
+        html.dark .category-tab, html.dark .workout-tab {
             color: #9ca3af;
         }
 
-        html.dark .workout-tab:hover {
+        html.dark .category-tab:hover, html.dark .workout-tab:hover {
             color: #d1d5db;
         }
 
-        html.dark .workout-tab.border-blue-500 {
+        html.dark .category-tab.border-blue-500, html.dark .workout-tab.border-blue-500 {
             color: #e5e7eb !important;
         }
 
-        .workout-view {
+        .category-view, .workout-view {
             transition: opacity 0.2s ease;
         }
 
@@ -357,12 +357,12 @@
                 
                 <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-4 bg-transparent cursor-text" placeholder="無題" oninput="saveTitle()" onkeydown="handleTitleEnter(event)">
                 
-                <!-- 筋トレページのタブ -->
-                <div id="workout-tabs" class="hidden mb-6 flex gap-2 border-b border-gray-200">
-                    <button id="workout-tab-detail" onclick="switchWorkoutTab('detail')" class="workout-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
+                <!-- カテゴリーページのタブ -->
+                <div id="category-tabs" class="hidden mb-6 flex gap-2 border-b border-gray-200">
+                    <button id="category-tab-detail" onclick="switchCategoryTab('detail')" class="category-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
                         📋 詳細
                     </button>
-                    <button id="workout-tab-list" onclick="switchWorkoutTab('list')" class="workout-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
+                    <button id="category-tab-list" onclick="switchCategoryTab('list')" class="category-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
                         📊 一覧
                     </button>
                 </div>
@@ -379,13 +379,13 @@
                 </div>
                 
                 <!-- 通常表示（詳細タブ） -->
-                <div id="workout-detail-view" class="workout-view">
+                <div id="category-detail-view" class="category-view">
                     <div id="blocks" class="space-y-1 pb-10"></div>
                 </div>
                 
                 <!-- 一覧表示（一覧タブ） -->
-                <div id="workout-list-view" class="workout-view hidden">
-                    <div id="workout-list-container" class="space-y-8 pb-10"></div>
+                <div id="category-list-view" class="category-view hidden">
+                    <div id="category-list-container" class="space-y-8 pb-10"></div>
                 </div>
                 
                 <div class="mt-4 space-y-2">
@@ -1196,14 +1196,15 @@
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
             
-            // 筋トレページの場合はタブを表示
-            const workoutTabsDiv = document.getElementById('workout-tabs');
-            if (page.title === '筋トレ') {
-                workoutTabsDiv.classList.remove('hidden');
+            // カテゴリーページ（筋トレ、英語学習、食事）の場合はタブを表示
+            const categoryTabsDiv = document.getElementById('category-tabs');
+            const categoryPages = ['筋トレ', '英語学習', '食事'];
+            if (categoryPages.includes(page.title)) {
+                categoryTabsDiv.classList.remove('hidden');
                 // デフォルトは詳細タブを表示
-                switchWorkoutTab('detail');
+                switchCategoryTab('detail', page.title);
             } else {
-                workoutTabsDiv.classList.add('hidden');
+                categoryTabsDiv.classList.add('hidden');
             }
             
             currentBlocks = (page.blocks || []).slice().sort((a, b) => a.position - b.position);
@@ -1212,71 +1213,66 @@
             document.getElementById('save-status').innerText = '保存済み';
         }
 
-        async function loadAllWorkouts() {
-            // 全ての筋トレ項目を一覧表示
-            console.log('🏋️ Loading all workouts...');
-            currentPageId = null; // 通常ページではない
-            closeSidebar();
+        async function loadCategoryList(categoryTitle) {
+            // カテゴリーの全項目を一覧表示（筋トレ、英語学習、食事対応）
+            console.log(`📊 Loading all ${categoryTitle} items...`);
             
             // ローディング表示
             document.getElementById('save-status').innerText = '読み込み中...';
-            const blocksContainer = document.getElementById('blocks');
-            blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400"><div class="loader inline-block"></div></div>';
+            const listContainer = document.getElementById('category-list-container');
+            listContainer.innerHTML = '<div class="p-8 text-center text-gray-400"><div class="loader inline-block"></div></div>';
             
             try {
-                const res = await fetch('/api/all-workouts');
-                const workoutData = await res.json();
-                console.log('📊 Workout data received:', workoutData);
+                // APIエンドポイントをカテゴリーに応じて変更
+                let apiEndpoint = '/api/all-workouts';
+                if (categoryTitle === '英語学習') {
+                    apiEndpoint = '/api/all-english-learning';
+                } else if (categoryTitle === '食事') {
+                    apiEndpoint = '/api/all-meals';
+                }
                 
-                // ページタイトル設定
-                const coverDiv = document.getElementById('cover-image');
-                coverDiv.style.backgroundImage = '';
-                coverDiv.classList.remove('has-image');
-                document.getElementById('page-icon').innerText = '🏋️';
-                document.getElementById('page-title').value = '筋トレ一覧';
+                const res = await fetch(apiEndpoint);
+                const categoryData = await res.json();
+                console.log(`📊 ${categoryTitle} data received:`, categoryData);
                 
-                const breadcrumb = document.getElementById('parent-breadcrumb');
-                breadcrumb.classList.add('hidden');
+                // リスト表示
+                listContainer.innerHTML = '';
                 
-                // 筋トレ一覧を表示（一覧コンテナに）
-                const blocksContainer = document.getElementById('workout-list-container');
-                blocksContainer.innerHTML = '';
-                
-                if (workoutData.length === 0) {
-                    console.log('❌ No workout data');
-                    blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400">筋トレ記録がまだありません</div>';
+                if (categoryData.length === 0) {
+                    console.log(`❌ No ${categoryTitle} data`);
+                    listContainer.innerHTML = `<div class="p-8 text-center text-gray-400">${categoryTitle}の記録がまだありません</div>`;
                     document.getElementById('save-status').innerText = '保存済み';
                     return;
                 }
                 
                 // 日ごとにグループ化
-                workoutData.forEach((workout, idx) => {
+                categoryData.forEach((item, idx) => {
                     const section = document.createElement('div');
                     section.className = 'mb-8 pb-8 border-b border-gray-200 last:border-b-0';
                     
                     // 日記タイトル（親ページの情報）
                     let dateTitle = '日付不明';
-                    if (workout.parent_page) {
-                        dateTitle = workout.parent_page.title;
+                    if (item.parent_page) {
+                        dateTitle = item.parent_page.title;
                     }
                     
                     const dateHeader = document.createElement('div');
                     dateHeader.className = 'flex items-center gap-3 mb-4 cursor-pointer hover:opacity-70 transition';
                     dateHeader.innerHTML = `
-                        <span class="text-2xl">${workout.parent_page ? workout.parent_page.icon : '📅'}</span>
+                        <span class="text-2xl">${item.parent_page ? item.parent_page.icon : '📅'}</span>
                         <div>
                             <h2 class="text-xl font-bold text-gray-800">${dateTitle}</h2>
-                            <p class="text-xs text-gray-400">更新: ${new Date(workout.page.updated_at).toLocaleString('ja-JP')}</p>
+                            <p class="text-xs text-gray-400">更新: ${new Date(item.page.updated_at).toLocaleString('ja-JP')}</p>
                         </div>
                     `;
                     
                     // 親ページをクリックして開く
                     dateHeader.onclick = () => {
-                        if (workout.parent_page) {
-                            selectedPageIds = new Set([workout.parent_page.id]);
-                            lastSelectedId = workout.parent_page.id;
+                        if (item.parent_page) {
+                            selectedPageIds = new Set([item.parent_page.id]);
+                            lastSelectedId = item.parent_page.id;
                             fetchPages();
-                            loadPage(workout.parent_page.id);
+                            loadPage(item.parent_page.id);
                         }
                     };
                     
@@ -1286,7 +1282,7 @@
                     const blocksList = document.createElement('div');
                     blocksList.className = 'pl-8 space-y-3';
                     
-                    workout.blocks.forEach(block => {
+                    item.blocks.forEach(block => {
                         const blockDiv = document.createElement('div');
                         blockDiv.className = 'flex items-start gap-2';
                         
@@ -1309,23 +1305,28 @@
                     });
                     
                     section.appendChild(blocksList);
-                    blocksContainer.appendChild(section);
+                    listContainer.appendChild(section);
                 });
                 
                 document.getElementById('save-status').innerText = '保存済み';
             } catch (error) {
-                console.error('Error loading workouts:', error);
-                blocksContainer.innerHTML = '<div class="p-8 text-center text-red-400">エラーが発生しました</div>';
+                console.error(`Error loading ${categoryTitle}:`, error);
+                listContainer.innerHTML = `<div class="p-8 text-center text-red-400">エラーが発生しました</div>`;
                 document.getElementById('save-status').innerText = 'エラー';
             }
         }
 
-        async function switchWorkoutTab(tab) {
+        async function loadAllWorkouts() {
+            // 後方互換性のための関数
+            await loadCategoryList('筋トレ');
+        }
+
+        async function switchCategoryTab(tab, categoryTitle) {
             // タブの表示/非表示を切り替え
-            const detailView = document.getElementById('workout-detail-view');
-            const listView = document.getElementById('workout-list-view');
-            const detailTab = document.getElementById('workout-tab-detail');
-            const listTab = document.getElementById('workout-tab-list');
+            const detailView = document.getElementById('category-detail-view');
+            const listView = document.getElementById('category-list-view');
+            const detailTab = document.getElementById('category-tab-detail');
+            const listTab = document.getElementById('category-tab-list');
             
             if (tab === 'detail') {
                 // 詳細タブを表示
@@ -1349,9 +1350,15 @@
                 detailTab.classList.add('border-transparent');
                 
                 // 一覧をロード
-                await loadAllWorkouts();
+                await loadCategoryList(categoryTitle);
             }
         }
+
+        async function switchWorkoutTab(tab) {
+            // 後方互換性のための関数（古いコードが呼び出す可能性があるため）
+            await switchCategoryTab(tab, '筋トレ');
+        }
+        
         function renderBlocks(blocks) {
             const container = document.getElementById('blocks');
             container.innerHTML = '';
