@@ -1058,14 +1058,21 @@
             fetchPages();
             
             // 筋トレページの場合は全体一覧を表示
-            const pageElement = document.querySelector(`[data-page-id="${id}"]`);
-            fetch(`/api/pages/${id}`).then(res => res.json()).then(page => {
-                if (page.title === '筋トレ') {
-                    loadAllWorkouts();
-                } else {
+            fetch(`/api/pages/${id}`)
+                .then(res => res.json())
+                .then(page => {
+                    console.log('Loaded page:', page.title, 'ID:', page.id);
+                    if (page.title === '筋トレ') {
+                        console.log('Loading all workouts...');
+                        loadAllWorkouts();
+                    } else {
+                        loadPage(id);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error loading page:', err);
                     loadPage(id);
-                }
-            });
+                });
         }
 
         // フォルダの展開/折りたたみをトグル
@@ -1143,6 +1150,7 @@
 
         async function loadAllWorkouts() {
             // 全ての筋トレ項目を一覧表示
+            console.log('🏋️ Loading all workouts...');
             currentPageId = null; // 通常ページではない
             closeSidebar();
             
@@ -1154,6 +1162,7 @@
             try {
                 const res = await fetch('/api/all-workouts');
                 const workoutData = await res.json();
+                console.log('📊 Workout data received:', workoutData);
                 
                 // ページタイトル設定
                 const coverDiv = document.getElementById('cover-image');
@@ -1169,6 +1178,7 @@
                 blocksContainer.innerHTML = '';
                 
                 if (workoutData.length === 0) {
+                    console.log('❌ No workout data');
                     blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400">筋トレ記録がまだありません</div>';
                     document.getElementById('save-status').innerText = '保存済み';
                     return;
