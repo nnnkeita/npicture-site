@@ -779,6 +779,39 @@
             await createPageFromDate(newYear, newMonth, newDay);
         }
 
+        async function loadWeatherForSidebarPages() {
+            """サイドバーの日付ページの天気情報を取得して表示"""
+            const weatherElements = document.querySelectorAll('.weather-info');
+            
+            for (const element of weatherElements) {
+                const pageTitle = element.dataset.pageTitle;
+                
+                // タイトルが「YYYY年M月D日」形式かチェック
+                const dateMatch = pageTitle.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                
+                if (dateMatch) {
+                    const year = parseInt(dateMatch[1]);
+                    const month = parseInt(dateMatch[2]);
+                    const day = parseInt(dateMatch[3]);
+                    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    
+                    try {
+                        const response = await fetch(`/api/weather?date=${dateStr}`);
+                        if (response.ok) {
+                            const weather = await response.json();
+                            
+                            if (weather.temp_max !== null && weather.temp_min !== null) {
+                                element.innerHTML = `${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
+                                element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
+                            }
+                        }
+                    } catch (error) {
+                        // 天気データ取得失敗時は何もしない
+                    }
+                }
+            }
+        }
+
         async function openTodayPage() {
             // 今日の日付を取得
             const today = new Date();
@@ -993,6 +1026,9 @@
             siblingsByParent = new Map();
             pageHierarchy = new Map();
             renderTree(rootPages, container, null);
+            
+            // サイドバーの日付ページの天気情報を取得して表示
+            loadWeatherForSidebarPages();
         }
 
         function getSiblings(parentId) {
@@ -1113,6 +1149,7 @@
                     ${toggleBtn}
                     <span class="mr-2 opacity-70">${page.icon}</span>
                     <span class="truncate flex-1">${page.title || '無題'}</span>
+                    <span class="weather-info text-xs text-gray-400 ml-auto pl-2 min-w-max" data-page-id="${page.id}" data-page-title="${page.title || ''}"></span>
                 `;
                 wrapper.appendChild(row);
 
