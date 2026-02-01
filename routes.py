@@ -1166,8 +1166,15 @@ def register_routes(app):
             longitude = request.args.get('longitude', '141.4921')
             date_str = request.args.get('date', None)
             
+            # 過去データとの互換性を保つため、`start_date`と`end_date`を指定
+            # Open-Meteo APIは過去データと予報データ両方に対応
+            today = datetime.now()
+            start_date = (today - timedelta(days=365)).strftime('%Y-%m-%d')  # 1年前から
+            end_date = (today + timedelta(days=15)).strftime('%Y-%m-%d')  # 15日先まで
+            
             # Open-Meteo APIへのリクエスト（認証不要）
-            api_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Tokyo"
+            # archived_modelsパラメータで過去データを含める
+            api_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={latitude}&longitude={longitude}&start_date={start_date}&end_date={end_date}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
             
             with urllib.request.urlopen(api_url, timeout=5) as response:
                 weather_data = json.loads(response.read().decode('utf-8'))
@@ -1184,12 +1191,24 @@ def register_routes(app):
                 if date_str in times:
                     index = times.index(date_str)
                 else:
-                    return jsonify({'error': f'Data not available for date: {date_str}'}), 404
+                    # 日付が範囲外の場合は、最も近い日付を使用
+                    try:
+                        target_date = datetime.strptime(date_str, '%Y-%m-%d')
+                        closest_idx = 0
+                        min_diff = abs((datetime.strptime(times[0], '%Y-%m-%d') - target_date).days)
+                        for i, t in enumerate(times):
+                            diff = abs((datetime.strptime(t, '%Y-%m-%d') - target_date).days)
+                            if diff < min_diff:
+                                min_diff = diff
+                                closest_idx = i
+                        index = closest_idx
+                    except:
+                        return jsonify({'error': f'Invalid date format: {date_str}'}), 400
             else:
                 # 今日のデータを取得
-                today = datetime.now().strftime('%Y-%m-%d')
-                if today in times:
-                    index = times.index(today)
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                if today_str in times:
+                    index = times.index(today_str)
                 else:
                     index = 0  # データがあれば最初のデータを使用
             
