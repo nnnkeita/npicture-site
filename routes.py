@@ -1166,15 +1166,8 @@ def register_routes(app):
             longitude = request.args.get('longitude', '141.4921')
             date_str = request.args.get('date', None)
             
-            # 過去データとの互換性を保つため、`start_date`と`end_date`を指定
-            # Open-Meteo APIは過去データと予報データ両方に対応
-            today = datetime.now()
-            start_date = (today - timedelta(days=365)).strftime('%Y-%m-%d')  # 1年前から
-            end_date = (today + timedelta(days=15)).strftime('%Y-%m-%d')  # 15日先まで
-            
-            # Open-Meteo APIへのリクエスト（認証不要）
-            # archived_modelsパラメータで過去データを含める
-            api_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={latitude}&longitude={longitude}&start_date={start_date}&end_date={end_date}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
+            # まず標準の予報APIを試す（今後7日分）
+            api_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
             
             with urllib.request.urlopen(api_url, timeout=5) as response:
                 weather_data = json.loads(response.read().decode('utf-8'))
@@ -1186,38 +1179,45 @@ def register_routes(app):
             temps_min = daily.get('temperature_2m_min', [])
             weather_codes = daily.get('weather_code', [])
             
+            # インデックスを決定
+            index = 0
             if date_str:
-                # 指定された日付のデータを取得
                 if date_str in times:
                     index = times.index(date_str)
                 else:
-                    # 日付が範囲外の場合は、最も近い日付を使用
+                    # 指定された日付がない場合、最も近い日付を使用するか、
+                    # 過去の日付の場合は最初の日付を使用
                     try:
-                        target_date = datetime.strptime(date_str, '%Y-%m-%d')
-                        closest_idx = 0
-                        min_diff = abs((datetime.strptime(times[0], '%Y-%m-%d') - target_date).days)
-                        for i, t in enumerate(times):
-                            diff = abs((datetime.strptime(t, '%Y-%m-%d') - target_date).days)
-                            if diff < min_diff:
-                                min_diff = diff
-                                closest_idx = i
-                        index = closest_idx
-                    except:
-                        return jsonify({'error': f'Invalid date format: {date_str}'}), 400
+                        target = datetime.strptime(date_str, '%Y-%m-%d')
+                        first_date = datetime.strptime(times[0], '%Y-%m-%d')
+                        if target < first_date:
+                            # 過去の日付の場合は最初の日付のデータを返す
+                            index = 0
+                        else:
+                            # 最も近い日付を探す
+                            closest_diff = float('inf')
+                            for i, t in enumerate(times):
+                                curr_date = datetime.strptime(t, '%Y-%m-%d')
+                                diff = abs((curr_date - target).days)
+                                if diff < closest_diff:
+                                    closest_diff = diff
+                                    index = i
+                    except ValueError:
+                        index = 0
             else:
                 # 今日のデータを取得
                 today_str = datetime.now().strftime('%Y-%m-%d')
                 if today_str in times:
                     index = times.index(today_str)
                 else:
-                    index = 0  # データがあれば最初のデータを使用
+                    index = 0
             
             # WMO天気コードを天気アイコン/説明に変換
             weather_code = weather_codes[index] if index < len(weather_codes) else 0
             weather_icon, weather_desc = decode_wmo_code(weather_code)
             
             result = {
-                'date': times[index] if index < len(times) else date_str or datetime.now().strftime('%Y-%m-%d'),
+                'date': times[index] if index < len(times) else (date_str or datetime.now().strftime('%Y-%m-%d')),
                 'temp_max': temps_max[index] if index < len(temps_max) else None,
                 'temp_min': temps_min[index] if index < len(temps_min) else None,
                 'weather_code': weather_code,
