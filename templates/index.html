@@ -1056,7 +1056,16 @@
             selectedPageIds = new Set([id]);
             lastSelectedId = id;
             fetchPages();
-            loadPage(id);
+            
+            // 筋トレページの場合は全体一覧を表示
+            const pageElement = document.querySelector(`[data-page-id="${id}"]`);
+            fetch(`/api/pages/${id}`).then(res => res.json()).then(page => {
+                if (page.title === '筋トレ') {
+                    loadAllWorkouts();
+                } else {
+                    loadPage(id);
+                }
+            });
         }
 
         // フォルダの展開/折りたたみをトグル
@@ -1130,6 +1139,110 @@
             renderBlocks(currentBlocks);
             
             document.getElementById('save-status').innerText = '保存済み';
+        }
+
+        async function loadAllWorkouts() {
+            // 全ての筋トレ項目を一覧表示
+            currentPageId = null; // 通常ページではない
+            closeSidebar();
+            
+            // ローディング表示
+            document.getElementById('save-status').innerText = '読み込み中...';
+            const blocksContainer = document.getElementById('blocks');
+            blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400"><div class="loader inline-block"></div></div>';
+            
+            try {
+                const res = await fetch('/api/all-workouts');
+                const workoutData = await res.json();
+                
+                // ページタイトル設定
+                const coverDiv = document.getElementById('cover-image');
+                coverDiv.style.backgroundImage = '';
+                coverDiv.classList.remove('has-image');
+                document.getElementById('page-icon').innerText = '🏋️';
+                document.getElementById('page-title').value = '筋トレ一覧';
+                
+                const breadcrumb = document.getElementById('parent-breadcrumb');
+                breadcrumb.classList.add('hidden');
+                
+                // 筋トレ一覧を表示
+                blocksContainer.innerHTML = '';
+                
+                if (workoutData.length === 0) {
+                    blocksContainer.innerHTML = '<div class="p-8 text-center text-gray-400">筋トレ記録がまだありません</div>';
+                    document.getElementById('save-status').innerText = '保存済み';
+                    return;
+                }
+                
+                // 日ごとにグループ化
+                workoutData.forEach((workout, idx) => {
+                    const section = document.createElement('div');
+                    section.className = 'mb-8 pb-8 border-b border-gray-200 last:border-b-0';
+                    
+                    // 日記タイトル（親ページの情報）
+                    let dateTitle = '日付不明';
+                    if (workout.parent_page) {
+                        dateTitle = workout.parent_page.title;
+                    }
+                    
+                    const dateHeader = document.createElement('div');
+                    dateHeader.className = 'flex items-center gap-3 mb-4 cursor-pointer hover:opacity-70 transition';
+                    dateHeader.innerHTML = `
+                        <span class="text-2xl">${workout.parent_page ? workout.parent_page.icon : '📅'}</span>
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-800">${dateTitle}</h2>
+                            <p class="text-xs text-gray-400">更新: ${new Date(workout.page.updated_at).toLocaleString('ja-JP')}</p>
+                        </div>
+                    `;
+                    
+                    // 親ページをクリックして開く
+                    dateHeader.onclick = () => {
+                        if (workout.parent_page) {
+                            selectedPageIds = new Set([workout.parent_page.id]);
+                            lastSelectedId = workout.parent_page.id;
+                            fetchPages();
+                            loadPage(workout.parent_page.id);
+                        }
+                    };
+                    
+                    section.appendChild(dateHeader);
+                    
+                    // ブロック一覧を表示
+                    const blocksList = document.createElement('div');
+                    blocksList.className = 'pl-8 space-y-3';
+                    
+                    workout.blocks.forEach(block => {
+                        const blockDiv = document.createElement('div');
+                        blockDiv.className = 'flex items-start gap-2';
+                        
+                        if (block.type === 'h1') {
+                            blockDiv.innerHTML = `<span class="text-xl font-bold text-gray-800 w-full">${block.content}</span>`;
+                        } else if (block.type === 'todo') {
+                            const isChecked = block.checked ? 'checked' : '';
+                            const strikethrough = block.checked ? 'line-through text-gray-400' : '';
+                            blockDiv.innerHTML = `
+                                <input type="checkbox" ${isChecked} disabled class="mt-1.5 rounded text-blue-500 cursor-not-allowed">
+                                <span class="text-gray-700 ${strikethrough}">${block.content}</span>
+                            `;
+                        } else if (block.type === 'text' && block.content) {
+                            blockDiv.innerHTML = `<span class="text-gray-600">${block.content}</span>`;
+                        }
+                        
+                        if (blockDiv.innerHTML.trim()) {
+                            blocksList.appendChild(blockDiv);
+                        }
+                    });
+                    
+                    section.appendChild(blocksList);
+                    blocksContainer.appendChild(section);
+                });
+                
+                document.getElementById('save-status').innerText = '保存済み';
+            } catch (error) {
+                console.error('Error loading workouts:', error);
+                blocksContainer.innerHTML = '<div class="p-8 text-center text-red-400">エラーが発生しました</div>';
+                document.getElementById('save-status').innerText = 'エラー';
+            }
         }
 
         function renderBlocks(blocks) {

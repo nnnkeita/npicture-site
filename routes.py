@@ -71,6 +71,47 @@ def register_routes(app):
         conn.close()
         return jsonify(trash_pages)
 
+    @app.route('/api/all-workouts', methods=['GET'])
+    def get_all_workouts():
+        """全ての日記から筋トレページとそのブロックを取得"""
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # すべての「筋トレ」ページを取得
+        cursor.execute('''
+            SELECT * FROM pages 
+            WHERE title = '筋トレ' AND is_deleted = 0
+            ORDER BY updated_at DESC
+        ''')
+        workout_pages = [dict(row) for row in cursor.fetchall()]
+        
+        # 各筋トレページのブロックを取得
+        result = []
+        for page in workout_pages:
+            cursor.execute('''
+                SELECT * FROM blocks 
+                WHERE page_id = ? AND type IN ('todo', 'text', 'h1')
+                ORDER BY position
+            ''', (page['id'],))
+            blocks = [dict(row) for row in cursor.fetchall()]
+            
+            # 親ページの情報も取得（日記のタイトルを表示するため）
+            parent_page = None
+            if page['parent_id']:
+                cursor.execute('SELECT * FROM pages WHERE id = ?', (page['parent_id'],))
+                parent_row = cursor.fetchone()
+                if parent_row:
+                    parent_page = dict(parent_row)
+            
+            result.append({
+                'page': page,
+                'parent_page': parent_page,
+                'blocks': blocks
+            })
+        
+        conn.close()
+        return jsonify(result)
+
     @app.route('/api/today-highlights/<int:page_id>', methods=['GET'])
     def get_today_highlights(page_id):
         """指定ページ内で今日作成されたブロックを取得"""
