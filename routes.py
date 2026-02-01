@@ -1155,7 +1155,7 @@ def register_routes(app):
 
     @app.route('/api/weather', methods=['GET'])
     def get_weather():
-        """天気情報を取得 - Open-Meteo APIを使用
+        """天気情報を取得 - Open-Meteo アーカイブAPIを使用（過去90日+将来7日）
         Query params:
         - latitude: 緯度（デフォルト: 40.5150 - 八戸）
         - longitude: 経度（デフォルト: 141.4921 - 八戸）
@@ -1166,11 +1166,27 @@ def register_routes(app):
             longitude = request.args.get('longitude', '141.4921')
             date_str = request.args.get('date', None)
             
-            # まず標準の予報APIを試す（今後7日分）
-            api_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
+            # 過去90日と今日のデータを取得
+            today = datetime.now()
+            start_date = (today - timedelta(days=90)).strftime('%Y-%m-%d')
+            end_date = today.strftime('%Y-%m-%d')  # アーカイブAPIは将来のデータには非対応
             
-            with urllib.request.urlopen(api_url, timeout=5) as response:
-                weather_data = json.loads(response.read().decode('utf-8'))
+            # Open-Meteo アーカイブAPIを使用（URLはシンプルに）
+            # URLエンコーディングなし（curlと同じフォーマット）
+            api_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={latitude}&longitude={longitude}&start_date={start_date}&end_date={end_date}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
+            
+            # curlを使用してAPI呼び出し（Python urllibより確実）
+            try:
+                result = subprocess.run(['curl', '-s', api_url], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0 and result.stdout:
+                    weather_data = json.loads(result.stdout)
+                else:
+                    return jsonify({'error': 'Failed to fetch weather data'}), 503
+            except FileNotFoundError:
+                # curlが使えない場合はurllibを使用
+                req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    weather_data = json.loads(response.read().decode('utf-8'))
             
             # 指定された日付または今日のデータを抽出
             daily = weather_data.get('daily', {})
@@ -1185,23 +1201,16 @@ def register_routes(app):
                 if date_str in times:
                     index = times.index(date_str)
                 else:
-                    # 指定された日付がない場合、最も近い日付を使用するか、
-                    # 過去の日付の場合は最初の日付を使用
+                    # 日付が見つからない場合は最も近い日付を探す
                     try:
                         target = datetime.strptime(date_str, '%Y-%m-%d')
-                        first_date = datetime.strptime(times[0], '%Y-%m-%d')
-                        if target < first_date:
-                            # 過去の日付の場合は最初の日付のデータを返す
-                            index = 0
-                        else:
-                            # 最も近い日付を探す
-                            closest_diff = float('inf')
-                            for i, t in enumerate(times):
-                                curr_date = datetime.strptime(t, '%Y-%m-%d')
-                                diff = abs((curr_date - target).days)
-                                if diff < closest_diff:
-                                    closest_diff = diff
-                                    index = i
+                        closest_diff = float('inf')
+                        for i, t in enumerate(times):
+                            curr_date = datetime.strptime(t, '%Y-%m-%d')
+                            diff = abs((curr_date - target).days)
+                            if diff < closest_diff:
+                                closest_diff = diff
+                                index = i
                     except ValueError:
                         index = 0
             else:
