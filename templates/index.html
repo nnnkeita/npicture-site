@@ -780,8 +780,9 @@
         }
 
         async function loadWeatherForSidebarPages() {
-            // サイドバーの日付ページの天気情報を取得して表示
+            // サイドバーの日付ページの天気情報を取得して表示（並列化）
             const weatherElements = document.querySelectorAll('.weather-info');
+            const weatherPromises = [];
             
             for (const element of weatherElements) {
                 const pageTitle = element.dataset.pageTitle;
@@ -795,21 +796,28 @@
                     const day = parseInt(dateMatch[3]);
                     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     
-                    try {
-                        const response = await fetch(`/api/weather?date=${dateStr}`);
-                        if (response.ok) {
-                            const weather = await response.json();
-                            
-                            if (weather.temp_max !== null && weather.temp_min !== null) {
-                                element.innerHTML = `${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
-                                element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
-                            }
-                        }
-                    } catch (error) {
-                        // 天気データ取得失敗時は何もしない
-                    }
+                    // 全ての天気リクエストを並列実行
+                    weatherPromises.push(
+                        fetch(`/api/weather?date=${dateStr}`)
+                            .then(response => response.ok ? response.json() : null)
+                            .then(weather => {
+                                if (weather && weather.temp_max !== null && weather.temp_min !== null) {
+                                    element.innerHTML = `${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
+                                    element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
+                                }
+                            })
+                            .catch(() => {
+                                // 天気データ取得失敗時は何もしない
+                            })
+                    );
                 }
             }
+            
+            // 全ての天気リクエストを並列待機（タイムアウト30秒）
+            await Promise.race([
+                Promise.all(weatherPromises),
+                new Promise(resolve => setTimeout(resolve, 30000))
+            ]);
         }
 
         async function openTodayPage() {
@@ -1027,8 +1035,8 @@
             pageHierarchy = new Map();
             renderTree(rootPages, container, null);
             
-            // サイドバーの日付ページの天気情報を取得して表示
-            loadWeatherForSidebarPages();
+            // 天気情報を遅延ロード（ページレンダリング後に非同期で実行）
+            setTimeout(() => loadWeatherForSidebarPages(), 100);
         }
 
         function getSiblings(parentId) {

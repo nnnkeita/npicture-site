@@ -1162,31 +1162,52 @@ def register_routes(app):
         - date: YYYY-MM-DD形式（オプション、指定時はその日の天気を返す）
         """
         try:
+            import time
+            
             latitude = request.args.get('latitude', '40.5150')  # 八戸のデフォルト座標
             longitude = request.args.get('longitude', '141.4921')
             date_str = request.args.get('date', None)
             
-            # 過去90日と今日のデータを取得
-            today = datetime.now()
-            start_date = (today - timedelta(days=90)).strftime('%Y-%m-%d')
-            end_date = today.strftime('%Y-%m-%d')  # アーカイブAPIは将来のデータには非対応
+            # キャッシュキーを生成
+            cache_key = f"{latitude}_{longitude}"
             
-            # Open-Meteo アーカイブAPIを使用（URLはシンプルに）
-            # URLエンコーディングなし（curlと同じフォーマット）
-            api_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={latitude}&longitude={longitude}&start_date={start_date}&end_date={end_date}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
-            
-            # curlを使用してAPI呼び出し（Python urllibより確実）
-            try:
-                result = subprocess.run(['curl', '-s', api_url], capture_output=True, text=True, timeout=10)
-                if result.returncode == 0 and result.stdout:
-                    weather_data = json.loads(result.stdout)
-                else:
-                    return jsonify({'error': 'Failed to fetch weather data'}), 503
-            except FileNotFoundError:
-                # curlが使えない場合はurllibを使用
-                req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    weather_data = json.loads(response.read().decode('utf-8'))
+            # キャッシュを確認（1時間有効）
+            current_time = time.time()
+            if (hasattr(get_weather, '_cache') and cache_key in get_weather._cache and 
+                current_time - get_weather._cache_time < 3600):
+                weather_data = get_weather._cache[cache_key]
+            else:
+                # 過去90日と今日のデータを取得
+                today = datetime.now()
+                start_date = (today - timedelta(days=90)).strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')  # アーカイブAPIは将来のデータには非対応
+                
+                # Open-Meteo アーカイブAPIを使用（URLはシンプルに）
+                # URLエンコーディングなし（curlと同じフォーマット）
+                api_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={latitude}&longitude={longitude}&start_date={start_date}&end_date={end_date}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia/Tokyo"
+                
+                # curlを使用してAPI呼び出し（Python urllibより確実）
+                try:
+                    result = subprocess.run(['curl', '-s', api_url], capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0 and result.stdout:
+                        weather_data = json.loads(result.stdout)
+                        # キャッシュに保存
+                        if not hasattr(get_weather, '_cache'):
+                            get_weather._cache = {}
+                        get_weather._cache[cache_key] = weather_data
+                        get_weather._cache_time = current_time
+                    else:
+                        return jsonify({'error': 'Failed to fetch weather data'}), 503
+                except FileNotFoundError:
+                    # curlが使えない場合はurllibを使用
+                    req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        weather_data = json.loads(response.read().decode('utf-8'))
+                        # キャッシュに保存
+                        if not hasattr(get_weather, '_cache'):
+                            get_weather._cache = {}
+                        get_weather._cache[cache_key] = weather_data
+                        get_weather._cache_time = current_time
             
             # 指定された日付または今日のデータを抽出
             daily = weather_data.get('daily', {})
