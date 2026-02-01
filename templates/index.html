@@ -99,6 +99,58 @@
             0%, 100% { background-color: transparent; }
             50% { background-color: #fef3c7; }
         }
+
+        /* 筋トレページのタブスタイル */
+        .workout-tab {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #666;
+            text-decoration: none;
+        }
+
+        .workout-tab:hover {
+            color: #333;
+        }
+
+        .workout-tab.border-blue-500 {
+            border-bottom-color: #3b82f6 !important;
+            color: #1f2937 !important;
+            font-weight: 600;
+        }
+
+        html.dark .workout-tab {
+            color: #9ca3af;
+        }
+
+        html.dark .workout-tab:hover {
+            color: #d1d5db;
+        }
+
+        html.dark .workout-tab.border-blue-500 {
+            color: #e5e7eb !important;
+        }
+
+        .workout-view {
+            transition: opacity 0.2s ease;
+        }
+
+        /* 日付ナビゲーション */
+        #date-navigation button:hover {
+            background-color: #f3f4f6;
+        }
+        
+        html.dark #date-navigation button:hover {
+            background-color: #1f2937;
+        }
+        
+        html.dark #date-navigation {
+            color: #9ca3af;
+        }
+        
+        /* ブロックハイライトアニメーション */
+        @keyframes highlight-flash {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #fef3c7; }        }
         
         .highlight-block {
             animation: highlight-flash 0.6s ease-in-out 3;
@@ -305,6 +357,16 @@
                 
                 <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-4 bg-transparent cursor-text" placeholder="無題" oninput="saveTitle()" onkeydown="handleTitleEnter(event)">
                 
+                <!-- 筋トレページのタブ -->
+                <div id="workout-tabs" class="hidden mb-6 flex gap-2 border-b border-gray-200">
+                    <button id="workout-tab-detail" onclick="switchWorkoutTab('detail')" class="workout-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
+                        📋 詳細
+                    </button>
+                    <button id="workout-tab-list" onclick="switchWorkoutTab('list')" class="workout-tab px-4 py-2 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-800 transition">
+                        📊 一覧
+                    </button>
+                </div>
+                
                 <!-- 日付ページナビゲーション -->
                 <div id="date-navigation" class="hidden mb-8 flex items-center justify-between text-sm text-gray-500">
                     <button onclick="navigateDate(-1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
@@ -316,7 +378,15 @@
                     </button>
                 </div>
                 
-                <div id="blocks" class="space-y-1 pb-10"></div>
+                <!-- 通常表示（詳細タブ） -->
+                <div id="workout-detail-view" class="workout-view">
+                    <div id="blocks" class="space-y-1 pb-10"></div>
+                </div>
+                
+                <!-- 一覧表示（一覧タブ） -->
+                <div id="workout-list-view" class="workout-view hidden">
+                    <div id="workout-list-container" class="space-y-8 pb-10"></div>
+                </div>
                 
                 <div class="mt-4 space-y-2">
                     <div class="flex flex-wrap gap-2 text-sm">
@@ -1056,23 +1126,7 @@
             selectedPageIds = new Set([id]);
             lastSelectedId = id;
             fetchPages();
-            
-            // 筋トレページの場合は全体一覧を表示
-            fetch(`/api/pages/${id}`)
-                .then(res => res.json())
-                .then(page => {
-                    console.log('Loaded page:', page.title, 'ID:', page.id);
-                    if (page.title === '筋トレ') {
-                        console.log('Loading all workouts...');
-                        loadAllWorkouts();
-                    } else {
-                        loadPage(id);
-                    }
-                })
-                .catch(err => {
-                    console.error('Error loading page:', err);
-                    loadPage(id);
-                });
+            loadPage(id);
         }
 
         // フォルダの展開/折りたたみをトグル
@@ -1142,6 +1196,16 @@
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
             
+            // 筋トレページの場合はタブを表示
+            const workoutTabsDiv = document.getElementById('workout-tabs');
+            if (page.title === '筋トレ') {
+                workoutTabsDiv.classList.remove('hidden');
+                // デフォルトは詳細タブを表示
+                switchWorkoutTab('detail');
+            } else {
+                workoutTabsDiv.classList.add('hidden');
+            }
+            
             currentBlocks = (page.blocks || []).slice().sort((a, b) => a.position - b.position);
             renderBlocks(currentBlocks);
             
@@ -1174,7 +1238,8 @@
                 const breadcrumb = document.getElementById('parent-breadcrumb');
                 breadcrumb.classList.add('hidden');
                 
-                // 筋トレ一覧を表示
+                // 筋トレ一覧を表示（一覧コンテナに）
+                const blocksContainer = document.getElementById('workout-list-container');
                 blocksContainer.innerHTML = '';
                 
                 if (workoutData.length === 0) {
@@ -1255,6 +1320,38 @@
             }
         }
 
+        async function switchWorkoutTab(tab) {
+            // タブの表示/非表示を切り替え
+            const detailView = document.getElementById('workout-detail-view');
+            const listView = document.getElementById('workout-list-view');
+            const detailTab = document.getElementById('workout-tab-detail');
+            const listTab = document.getElementById('workout-tab-list');
+            
+            if (tab === 'detail') {
+                // 詳細タブを表示
+                detailView.classList.remove('hidden');
+                listView.classList.add('hidden');
+                
+                // タブスタイルを更新
+                detailTab.classList.add('border-blue-500', 'border-b-2', 'text-gray-800');
+                detailTab.classList.remove('border-transparent');
+                listTab.classList.remove('border-blue-500', 'text-gray-800');
+                listTab.classList.add('border-transparent');
+            } else if (tab === 'list') {
+                // 一覧タブを表示
+                detailView.classList.add('hidden');
+                listView.classList.remove('hidden');
+                
+                // タブスタイルを更新
+                listTab.classList.add('border-blue-500', 'border-b-2', 'text-gray-800');
+                listTab.classList.remove('border-transparent');
+                detailTab.classList.remove('border-blue-500', 'text-gray-800');
+                detailTab.classList.add('border-transparent');
+                
+                // 一覧をロード
+                await loadAllWorkouts();
+            }
+        }
         function renderBlocks(blocks) {
             const container = document.getElementById('blocks');
             container.innerHTML = '';
