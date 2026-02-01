@@ -76,47 +76,34 @@ def register_routes(app):
         conn = get_db()
         cursor = conn.cursor()
         
-        # 1. カテゴリーページを見つける（例：食事、筋トレ）
-        cursor.execute('''
-            SELECT id FROM pages 
-            WHERE title = ? AND is_deleted = 0
-        ''', (category_title,))
-        category_row = cursor.fetchone()
-        
-        if not category_row:
-            conn.close()
-            return []
-        
-        category_page_id = category_row[0]
-        
-        # 2. カテゴリーページの子ページ（日記など）を取得
+        # 1. 指定されたカテゴリーページをすべて見つける（例：食事、筋トレ）
         cursor.execute('''
             SELECT * FROM pages 
-            WHERE parent_id = ? AND is_deleted = 0
+            WHERE title = ? AND is_deleted = 0
             ORDER BY updated_at DESC
-        ''', (category_page_id,))
-        child_pages = [dict(row) for row in cursor.fetchall()]
+        ''', (category_title,))
+        category_pages = [dict(row) for row in cursor.fetchall()]
         
         result = []
-        for child_page in child_pages:
-            # 3. 子ページ内のブロックを取得
+        for category_page in category_pages:
+            # 2. カテゴリーページ自体のブロックを取得
             cursor.execute('''
                 SELECT * FROM blocks 
-                WHERE page_id = ? AND type IN ('todo', 'text', 'h1')
+                WHERE page_id = ? AND type IN ('todo', 'text', 'h1', 'calorie')
                 ORDER BY position
-            ''', (child_page['id'],))
+            ''', (category_page['id'],))
             blocks = [dict(row) for row in cursor.fetchall()]
             
-            # 4. 親ページ情報（子ページを含む日記）を取得
+            # 3. 親ページ情報（日記ページなど）を取得
             parent_page = None
-            if child_page['parent_id']:
-                cursor.execute('SELECT * FROM pages WHERE id = ?', (child_page['parent_id'],))
+            if category_page['parent_id']:
+                cursor.execute('SELECT * FROM pages WHERE id = ?', (category_page['parent_id'],))
                 parent_row = cursor.fetchone()
                 if parent_row:
                     parent_page = dict(parent_row)
             
             result.append({
-                'page': child_page,
+                'page': category_page,
                 'parent_page': parent_page,
                 'blocks': blocks
             })
