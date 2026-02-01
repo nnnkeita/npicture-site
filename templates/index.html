@@ -1293,19 +1293,30 @@
                     
                     item.blocks.forEach(block => {
                         const blockDiv = document.createElement('div');
-                        blockDiv.className = 'flex items-start gap-2';
+                        blockDiv.className = 'flex items-start gap-2 text-gray-700';
                         
                         if (block.type === 'h1') {
-                            blockDiv.innerHTML = `<span class="text-xl font-bold text-gray-800 w-full">${block.content}</span>`;
+                            blockDiv.innerHTML = `<span class="text-xl font-bold text-gray-800 w-full">${block.content || ''}</span>`;
                         } else if (block.type === 'todo') {
-                            const isChecked = block.checked ? 'checked' : '';
-                            const strikethrough = block.checked ? 'line-through text-gray-400' : '';
-                            blockDiv.innerHTML = `
-                                <input type="checkbox" ${isChecked} disabled class="mt-1.5 rounded text-blue-500 cursor-not-allowed">
-                                <span class="text-gray-700 ${strikethrough}">${block.content}</span>
-                            `;
-                        } else if (block.type === 'text' && block.content) {
-                            blockDiv.innerHTML = `<span class="text-gray-600">${block.content}</span>`;
+                            // todoブロックはcontentが空でも表示（チェックボックスのみなど）
+                            if (block.content) {
+                                const isChecked = block.checked ? 'checked' : '';
+                                const strikethrough = block.checked ? 'line-through text-gray-400' : '';
+                                blockDiv.innerHTML = `
+                                    <input type="checkbox" ${isChecked} disabled class="mt-1.5 rounded text-blue-500 cursor-not-allowed">
+                                    <span class="text-gray-700 ${strikethrough}">${block.content}</span>
+                                `;
+                            }
+                        } else if (block.type === 'text') {
+                            if (block.content) {
+                                blockDiv.innerHTML = `<span class="text-gray-600">${block.content}</span>`;
+                            }
+                        } else if (block.type === 'calorie') {
+                            // calorieブロックは複数行のテキストなので改行を保持
+                            if (block.content) {
+                                const contentWithLineBreaks = block.content.replace(/\n/g, '<br>');
+                                blockDiv.innerHTML = `<div class="text-gray-700 whitespace-pre-wrap">${contentWithLineBreaks}</div>`;
+                            }
                         }
                         
                         if (blockDiv.innerHTML.trim()) {
