@@ -12,6 +12,8 @@ import zipfile
 import shutil
 import sqlite3
 import subprocess
+import urllib.request
+import urllib.error
 from werkzeug.utils import secure_filename
 
 from database import (
@@ -1150,3 +1152,98 @@ def register_routes(app):
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/weather', methods=['GET'])
+    def get_weather():
+        """天気情報を取得 - Open-Meteo APIを使用
+        Query params:
+        - latitude: 緯度（デフォルト: 40.5150 - 八戸）
+        - longitude: 経度（デフォルト: 141.4921 - 八戸）
+        - date: YYYY-MM-DD形式（オプション、指定時はその日の天気を返す）
+        """
+        try:
+            latitude = request.args.get('latitude', '40.5150')  # 八戸のデフォルト座標
+            longitude = request.args.get('longitude', '141.4921')
+            date_str = request.args.get('date', None)
+            
+            # Open-Meteo APIへのリクエスト（認証不要）
+            api_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Tokyo"
+            
+            with urllib.request.urlopen(api_url, timeout=5) as response:
+                weather_data = json.loads(response.read().decode('utf-8'))
+            
+            # 指定された日付または今日のデータを抽出
+            daily = weather_data.get('daily', {})
+            times = daily.get('time', [])
+            temps_max = daily.get('temperature_2m_max', [])
+            temps_min = daily.get('temperature_2m_min', [])
+            weather_codes = daily.get('weather_code', [])
+            
+            if date_str:
+                # 指定された日付のデータを取得
+                if date_str in times:
+                    index = times.index(date_str)
+                else:
+                    return jsonify({'error': f'Data not available for date: {date_str}'}), 404
+            else:
+                # 今日のデータを取得
+                today = datetime.now().strftime('%Y-%m-%d')
+                if today in times:
+                    index = times.index(today)
+                else:
+                    index = 0  # データがあれば最初のデータを使用
+            
+            # WMO天気コードを天気アイコン/説明に変換
+            weather_code = weather_codes[index] if index < len(weather_codes) else 0
+            weather_icon, weather_desc = decode_wmo_code(weather_code)
+            
+            result = {
+                'date': times[index] if index < len(times) else date_str or datetime.now().strftime('%Y-%m-%d'),
+                'temp_max': temps_max[index] if index < len(temps_max) else None,
+                'temp_min': temps_min[index] if index < len(temps_min) else None,
+                'weather_code': weather_code,
+                'weather_icon': weather_icon,
+                'weather_desc': weather_desc,
+                'latitude': latitude,
+                'longitude': longitude
+            }
+            
+            return jsonify(result), 200
+            
+        except urllib.error.URLError as e:
+            return jsonify({'error': f'Failed to fetch weather data: {str(e)}'}), 503
+        except Exception as e:
+            return jsonify({'error': f'Error: {str(e)}'}), 500
+
+
+def decode_wmo_code(code):
+    """WMO天気コードを日本語の天気説明とアイコンに変換"""
+    weather_map = {
+        0: ('☀️', '晴れ'),
+        1: ('🌤️', 'ほぼ晴れ'),
+        2: ('⛅', 'くもり'),
+        3: ('☁️', 'くもり'),
+        45: ('🌫️', '霧'),
+        48: ('🌫️', '霧（結氷）'),
+        51: ('🌧️', '小雨'),
+        53: ('🌧️', '小雨'),
+        55: ('🌧️', '小雨'),
+        61: ('🌧️', '雨'),
+        63: ('🌧️', '雨'),
+        65: ('⛈️', '強い雨'),
+        71: ('❄️', '小雪'),
+        73: ('❄️', '小雪'),
+        75: ('❄️', '大雪'),
+        77: ('❄️', '雪粒'),
+        80: ('🌧️', 'にわか雨'),
+        81: ('🌧️', '強いにわか雨'),
+        82: ('⛈️', '激しいにわか雨'),
+        85: ('❄️', 'にわか雪'),
+        86: ('❄️', '強いにわか雪'),
+        95: ('⛈️', '雷雨'),
+        96: ('⛈️', '雷雨（氷粒）'),
+        99: ('⛈️', '雷雨（氷粒）'),
+    }
+    
+    icon, desc = weather_map.get(code, ('❓', '不明'))
+    return icon, desc

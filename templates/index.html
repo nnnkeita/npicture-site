@@ -369,13 +369,18 @@
                 
                 <!-- 日付ページナビゲーション -->
                 <div id="date-navigation" class="hidden mb-8 flex items-center justify-between text-sm text-gray-500">
-                    <button onclick="navigateDate(-1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
-                        ← 前日
-                    </button>
-                    <span id="date-display" class="text-gray-400"></span>
-                    <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
-                        翌日 →
-                    </button>
+                    <div class="flex items-center gap-4">
+                        <button onclick="navigateDate(-1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
+                            ← 前日
+                        </button>
+                        <span id="date-display" class="text-gray-400"></span>
+                        <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
+                            翌日 →
+                        </button>
+                    </div>
+                    <div id="weather-info" class="flex items-center gap-2 text-sm text-gray-600">
+                        <!-- 天気情報がここに表示される -->
+                    </div>
                 </div>
                 
                 <!-- 通常表示（詳細タブ） -->
@@ -721,8 +726,38 @@
                 dateNav.dataset.year = year;
                 dateNav.dataset.month = month;
                 dateNav.dataset.day = day;
+                
+                // 天気情報を取得して表示
+                fetchAndDisplayWeather(year, month, day);
             } else {
                 dateNav.classList.add('hidden');
+            }
+        }
+
+        async function fetchAndDisplayWeather(year, month, day) {
+            try {
+                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const response = await fetch(`/api/weather?date=${dateStr}`);
+                
+                if (!response.ok) {
+                    console.warn('Weather data not available');
+                    return;
+                }
+                
+                const weather = await response.json();
+                const weatherInfo = document.getElementById('weather-info');
+                
+                if (weather.temp_max !== null && weather.temp_min !== null) {
+                    weatherInfo.innerHTML = `
+                        <span class="text-lg">${weather.weather_icon}</span>
+                        <span class="text-gray-600">${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C</span>
+                    `;
+                } else {
+                    weatherInfo.innerHTML = '';
+                }
+            } catch (error) {
+                console.warn('Failed to fetch weather:', error);
+                document.getElementById('weather-info').innerHTML = '';
             }
         }
 
