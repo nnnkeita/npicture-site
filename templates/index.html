@@ -554,6 +554,7 @@
         let lastSelectedId = null; // Shiftレンジの基準
         let visiblePageOrder = []; // 現在表示中の順序（フラット）
         let currentBlocks = [];
+        let currentCategoryTitle = null;
         let focusedBlockId = null;
         let siblingsByParent = new Map(); // 親ごとの並び順を保持
         let pageHierarchy = new Map(); // 子孫チェック用の簡易ツリー
@@ -1200,10 +1201,12 @@
             const categoryTabsDiv = document.getElementById('category-tabs');
             const categoryPages = ['筋トレ', '英語学習', '食事'];
             if (categoryPages.includes(page.title)) {
+                currentCategoryTitle = page.title;
                 categoryTabsDiv.classList.remove('hidden');
                 // デフォルトは詳細タブを表示
                 switchCategoryTab('detail', page.title);
             } else {
+                currentCategoryTitle = null;
                 categoryTabsDiv.classList.add('hidden');
             }
             
@@ -1221,6 +1224,12 @@
             document.getElementById('save-status').innerText = '読み込み中...';
             const listContainer = document.getElementById('category-list-container');
             listContainer.innerHTML = '<div class="p-8 text-center text-gray-400"><div class="loader inline-block"></div></div>';
+
+            if (!categoryTitle) {
+                listContainer.innerHTML = '<div class="p-8 text-center text-gray-400">カテゴリが選択されていません</div>';
+                document.getElementById('save-status').innerText = '保存済み';
+                return;
+            }
             
             try {
                 // APIエンドポイントをカテゴリーに応じて変更
@@ -1327,6 +1336,8 @@
             const listView = document.getElementById('category-list-view');
             const detailTab = document.getElementById('category-tab-detail');
             const listTab = document.getElementById('category-tab-list');
+
+            const resolvedCategoryTitle = categoryTitle || currentCategoryTitle;
             
             if (tab === 'detail') {
                 // 詳細タブを表示
@@ -1350,7 +1361,7 @@
                 detailTab.classList.add('border-transparent');
                 
                 // 一覧をロード
-                await loadCategoryList(categoryTitle);
+                await loadCategoryList(resolvedCategoryTitle);
             }
         }
 
