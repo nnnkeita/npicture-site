@@ -76,43 +76,9 @@ if STRIPE_SECRET_KEY:
 # === 認証ガード ===
 @app.before_request
 def require_login():
-    if not AUTH_ENABLED:
-        return
-    path = request.path or ''
-    if path.startswith('/static') or path.startswith('/uploads'):
-        return
-    if path.startswith('/webhook/stripe'):
-        return
-    if path in ['/login', '/setup', '/forgot', '/reset'] or path.startswith('/reset/'):
-        return
-    if get_user_count() == 0:
-        return redirect(url_for('setup'))
-    if session.get('user_id'):
-        # サブスク確認（個人向けSaaS）
-        if path.startswith('/billing') or path.startswith('/logout') or path.startswith('/webhook/stripe'):
-            return
-        user = get_user_by_id(session.get('user_id'))
-        user = dict(user) if user else None
-        if user and user.get('subscription_status') == 'trialing':
-            ends_at = user.get('subscription_ends_at')
-            if ends_at:
-                try:
-                    if datetime.fromisoformat(ends_at) < datetime.utcnow():
-                        update_user_subscription(user['id'], 'inactive', ends_at)
-                    else:
-                        return
-                except Exception:
-                    return
-            else:
-                return
-        if user and user.get('subscription_status') == 'active':
-            return
-        if path.startswith('/api/'):
-            return jsonify({'error': 'Payment required'}), 402
-        return redirect(url_for('billing'))
-    if path.startswith('/api/'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    return redirect(url_for('login'))
+    # 認証は完全に無効化
+    return
+
 
 # === ページルート ===
 @app.route('/')
