@@ -926,6 +926,7 @@
         async function loadWeatherForSidebarPages() {
             // サイドバーの日付ページの気分と天気情報を取得して表示（並列化）
             const weatherElements = document.querySelectorAll('.weather-info');
+            console.log(`Found ${weatherElements.length} weather elements`);
             const weatherPromises = [];
             
             for (const element of weatherElements) {
@@ -940,6 +941,7 @@
                     const month = parseInt(dateMatch[2]);
                     const day = parseInt(dateMatch[3]);
                     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    console.log(`Processing date page: ${pageTitle}, pageId: ${pageId}`);
                     
                     // 気分と天気を両方取得して表示
                     weatherPromises.push(
@@ -947,6 +949,7 @@
                             fetch(`/api/pages/${pageId}`).then(r => r.ok ? r.json() : null).catch(() => null),
                             fetch(`/api/weather?date=${dateStr}`).then(r => r.ok ? r.json() : null).catch(() => null)
                         ]).then(([page, weather]) => {
+                            console.log(`Data for ${pageTitle}:`, { mood: page?.mood, weather: weather });
                             let html = '';
                             let title = '';
                             
@@ -969,6 +972,7 @@
                             if (html) {
                                 element.innerHTML = html;
                                 element.title = title;
+                                console.log(`Updated ${pageTitle} with: ${html}`);
                             }
                         })
                     );
