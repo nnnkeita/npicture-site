@@ -8,6 +8,7 @@
 import sqlite3
 import os
 import json
+from typing import Optional
 
 # パス設定
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +86,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     
+    # 感謝日記カラムを追加
+    try:
+        cursor.execute("ALTER TABLE pages ADD COLUMN gratitude_text TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +139,43 @@ def init_db():
         content_json TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # ユーザー認証用テーブル
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # 課金情報カラム追加
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN subscription_ends_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+
+    # パスワード再設定トークン
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
     ''')
     
@@ -196,6 +240,110 @@ def init_db():
     except Exception as e:
         pass
     
+    conn.commit()
+    conn.close()
+
+def get_user_count() -> int:
+    """登録ユーザー数を取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM users')
+    count = cursor.fetchone()[0]
+    conn.close()
+    return int(count or 0)
+
+def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
+    """ユーザー名でユーザー取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def get_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
+    """ユーザーIDでユーザー取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def create_user(username: str, password_hash: str) -> int:
+    """ユーザー作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+        (username, password_hash)
+    )
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return int(user_id)
+
+def update_user_password(user_id: int, password_hash: str) -> None:
+    """パスワード更新"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))
+    conn.commit()
+    conn.close()
+
+def set_password_reset_token(user_id: int, token: str, expires_at: str) -> None:
+    """パスワード再設定トークン登録"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)',
+        (user_id, token, expires_at)
+    )
+    conn.commit()
+    conn.close()
+
+def get_password_reset_token(token: str) -> Optional[sqlite3.Row]:
+    """トークン取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM password_reset_tokens WHERE token = ?', (token,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def mark_password_reset_token_used(token: str) -> None:
+    """トークン使用済み"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
+    conn.commit()
+    conn.close()
+
+def update_user_stripe_customer(user_id: int, customer_id: str) -> None:
+    """Stripe顧客ID更新"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET stripe_customer_id = ? WHERE id = ?', (customer_id, user_id))
+    conn.commit()
+    conn.close()
+
+def get_user_by_stripe_customer(customer_id: str) -> Optional[sqlite3.Row]:
+    """Stripe顧客IDでユーザー取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE stripe_customer_id = ?', (customer_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def update_user_subscription(user_id: int, status: str, ends_at: Optional[str] = None) -> None:
+    """サブスク状態更新"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET subscription_status = ?, subscription_ends_at = ? WHERE id = ?',
+        (status, ends_at, user_id)
+    )
     conn.commit()
     conn.close()
 

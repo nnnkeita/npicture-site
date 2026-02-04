@@ -50,6 +50,11 @@
         /* 淡いグリーン背景のダーク版 */
         html.dark .bg-green-50 { background-color: #0b1f1a !important; }
         html.dark .bg-green-100 { background-color: #132a22 !important; }
+        /* 感謝日記のダーク版 */
+        html.dark .bg-gradient-to-r.from-amber-50 { background: linear-gradient(to right, #1f1a0b, #2a2209) !important; }
+        html.dark .border-amber-100 { border-color: #4d3d0b !important; }
+        html.dark .border-amber-200 { border-color: #6d5610 !important; }
+        html.dark #gratitude-text { background-color: rgba(255, 255, 255, 0.05) !important; }
         html.dark .text-gray-800 { color: #e5e7eb !important; }
         html.dark .text-gray-700 { color: #e5e7eb !important; }
         html.dark .text-gray-600 { color: #d1d5db !important; }
@@ -328,6 +333,13 @@
                 <span id="breadcrumb" class="flex items-center gap-1"></span>
             </div>
             <button id="theme-toggle" onclick="toggleTheme()" class="text-gray-600 text-sm px-2 py-1 rounded hover:bg-gray-100">🌙</button>
+            <div class="flex items-center gap-2">
+                {% if current_user %}
+                <span class="text-xs text-gray-500">👤 {{ current_user }}</span>
+                {% endif %}
+                <a href="/billing" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">プラン</a>
+                <a href="/logout" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">ログアウト</a>
+            </div>
             <span id="save-status" class="text-xs text-gray-400">保存済み</span>
         </div>
 
@@ -394,6 +406,19 @@
                         <button class="mood-btn text-2xl hover:scale-125 transition" data-mood="1" title="最悪😢">😢</button>
                     </div>
                     <div id="mood-display" class="ml-auto text-sm text-gray-500"></div>
+                </div>
+                
+                <!-- 感謝日記 -->
+                <div id="gratitude-journal" class="hidden mb-6 p-4 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-lg border border-amber-100">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-lg">🙏</span>
+                        <span class="text-sm font-semibold text-gray-700">今日の感謝日記</span>
+                    </div>
+                    <textarea id="gratitude-text" 
+                              placeholder="今日感謝したことを書きましょう..."
+                              class="w-full p-3 bg-white/60 border border-amber-200 rounded-md text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent resize-none"
+                              rows="3"
+                              style="min-height: 80px;"></textarea>
                 </div>
                 
                 <!-- 通常表示（詳細タブ） -->
@@ -642,6 +667,8 @@
             applyThemeFromStorage();
             fetchPages();
             renderCalendar();
+            // 感謝日記の設定
+            setupGratitudeJournal();
             // /inbox で開かれた場合は単一ページを開く。それ以外は今日のページ。
             if (window.INBOX_ID !== null) {
                 loadPage(window.INBOX_ID);
@@ -835,6 +862,61 @@
                 }
             } catch (error) {
                 console.error('Failed to save mood:', error);
+            }
+        }
+
+        // --- 感謝日記機能 ---
+        async function loadGratitudeData() {
+            if (!currentPageId) return;
+            try {
+                const response = await fetch(`/api/pages/${currentPageId}`);
+                if (response.ok) {
+                    const page = await response.json();
+                    const gratitudeText = page.gratitude_text || '';
+                    const gratitudeTextarea = document.getElementById('gratitude-text');
+                    if (gratitudeTextarea) {
+                        gratitudeTextarea.value = gratitudeText;
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load gratitude data:', error);
+            }
+        }
+
+        async function saveGratitudeData() {
+            if (!currentPageId) return;
+            const gratitudeTextarea = document.getElementById('gratitude-text');
+            if (!gratitudeTextarea) return;
+            
+            const gratitudeText = gratitudeTextarea.value;
+            
+            try {
+                const response = await fetch(`/api/pages/${currentPageId}/gratitude`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gratitude_text: gratitudeText })
+                });
+                if (response.ok) {
+                    // 保存成功
+                    console.log('Gratitude saved successfully');
+                }
+            } catch (error) {
+                console.error('Failed to save gratitude:', error);
+            }
+        }
+
+        // 感謝日記のテキストエリアにイベントリスナーを設定
+        function setupGratitudeJournal() {
+            const gratitudeTextarea = document.getElementById('gratitude-text');
+            if (gratitudeTextarea) {
+                // デバウンスして保存
+                let saveTimeout;
+                gratitudeTextarea.addEventListener('input', () => {
+                    clearTimeout(saveTimeout);
+                    saveTimeout = setTimeout(() => {
+                        saveGratitudeData();
+                    }, 500); // 500ms後に自動保存
+                });
             }
         }
 
@@ -1354,15 +1436,19 @@
             // 日付ページかどうか判定してナビゲーション表示
             checkAndShowDateNavigation(page.title);
             
-            // 日付ページの場合は感情トラッカーを表示
+            // 日付ページの場合は感情トラッカーと感謝日記を表示
             const moodTracker = document.getElementById('mood-tracker');
+            const gratitudeJournal = document.getElementById('gratitude-journal');
             const dateMatch = page.title.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
             if (dateMatch) {
                 moodTracker.classList.remove('hidden');
+                gratitudeJournal.classList.remove('hidden');
                 setupMoodTracker();
                 loadMoodData();
+                loadGratitudeData();
             } else {
                 moodTracker.classList.add('hidden');
+                gratitudeJournal.classList.add('hidden');
             }
             
             // カテゴリーページ（筋トレ、英語学習、食事）の場合はタブを表示

@@ -628,6 +628,29 @@ def register_routes(app):
                 return jsonify({'error': 'Page not found'}), 404
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/pages/<int:page_id>/gratitude', methods=['PUT'])
+    def update_page_gratitude(page_id):
+        """ページの感謝日記を更新"""
+        try:
+            data = request.json
+            gratitude_text = data.get('gratitude_text', '')
+            
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE pages SET gratitude_text = ? WHERE id = ?', (gratitude_text, page_id))
+            conn.commit()
+            
+            cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+            page = dict(cursor.fetchone()) if cursor.fetchone() else None
+            conn.close()
+            
+            if page:
+                return jsonify({'success': True, 'gratitude_text': gratitude_text})
+            else:
+                return jsonify({'error': 'Page not found'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/blocks/<int:block_id>', methods=['DELETE'])
     def delete_block(block_id):

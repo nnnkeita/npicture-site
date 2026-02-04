@@ -1,0 +1,4 @@
+flask
+werkzeug
+stripe
+python-dotenv

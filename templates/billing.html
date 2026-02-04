@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>サブスクリプション</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-green-50 flex items-center justify-center">
+    <div class="w-full max-w-md bg-white shadow-sm border border-gray-200 rounded-lg p-6">
+        <h1 class="text-xl font-bold text-gray-700 mb-2">サブスクリプション</h1>
+        <p class="text-sm text-gray-500 mb-4">現在のステータス: <span class="font-semibold">{{ status }}</span></p>
+        {% if error %}
+        <div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{{ error }}</div>
+        {% endif %}
+        {% if request.args.get('success') %}
+        <div class="mb-4 text-sm text-green-700 bg-green-50 border border-green-100 rounded px-3 py-2">決済が完了しました。</div>
+        {% endif %}
+        {% if request.args.get('canceled') %}
+        <div class="mb-4 text-sm text-gray-600 bg-gray-50 border border-gray-100 rounded px-3 py-2">決済がキャンセルされました。</div>
+        {% endif %}
+        <div class="space-y-2">
+            <a href="/billing/checkout" class="block w-full text-center bg-green-600 text-white py-2 rounded hover:bg-green-700">有料プランに加入</a>
+            <a href="/billing/portal" class="block w-full text-center bg-gray-100 text-gray-700 py-2 rounded hover:bg-gray-200">契約管理（解約/支払い）</a>
+            <a href="/logout" class="block w-full text-center text-gray-500 py-2 rounded hover:bg-gray-50">ログアウト</a>
+        </div>
+    </div>
+</body>
+</html>
