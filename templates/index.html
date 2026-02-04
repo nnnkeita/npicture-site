@@ -941,36 +941,37 @@
                     const day = parseInt(dateMatch[3]);
                     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     
-                    // ページデータを取得して気分を表示
+                    // 気分と天気を両方取得して表示
                     weatherPromises.push(
-                        fetch(`/api/pages/${pageId}`)
-                            .then(response => response.ok ? response.json() : null)
-                            .then(page => {
-                                if (page && page.mood) {
-                                    const moods = ['😢', '😟', '😐', '😊', '😄'];
-                                    const moodEmoji = moods[page.mood - 1] || '';
-                                    element.innerHTML = moodEmoji;
-                                    element.title = `今日の気分: ${moodEmoji}`;
-                                }
-                            })
-                            .catch(() => {
-                                // 失敗時は何もしない
-                            })
+                        Promise.all([
+                            fetch(`/api/pages/${pageId}`).then(r => r.ok ? r.json() : null).catch(() => null),
+                            fetch(`/api/weather?date=${dateStr}`).then(r => r.ok ? r.json() : null).catch(() => null)
+                        ]).then(([page, weather]) => {
+                            let html = '';
+                            let title = '';
+                            
+                            // 気分の顔文字
+                            if (page && page.mood) {
+                                const moods = ['😢', '😟', '😐', '😊', '😄'];
+                                const moodEmoji = moods[page.mood - 1] || '';
+                                html += moodEmoji;
+                                title += `気分: ${moodEmoji}`;
+                            }
+                            
+                            // 天気情報
+                            if (weather && weather.temp_max !== null && weather.temp_min !== null) {
+                                if (html) html += ' ';
+                                html += `${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
+                                if (title) title += ' / ';
+                                title += `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
+                            }
+                            
+                            if (html) {
+                                element.innerHTML = html;
+                                element.title = title;
+                            }
+                        })
                     );
-                    
-                    // 天気情報も取得（オプション）
-                    // weatherPromises.push(
-                    //     fetch(`/api/weather?date=${dateStr}`)
-                    //         .then(response => response.ok ? response.json() : null)
-                    //         .then(weather => {
-                    //             if (weather && weather.temp_max !== null && weather.temp_min !== null) {
-                    //                 const currentHtml = element.innerHTML;
-                    //                 element.innerHTML = `${currentHtml} ${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
-                    //                 element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
-                    //             }
-                    //         })
-                    //         .catch(() => {})
-                    // );
                 }
             }
             
