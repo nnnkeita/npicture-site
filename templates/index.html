@@ -924,12 +924,13 @@
         }
 
         async function loadWeatherForSidebarPages() {
-            // サイドバーの日付ページの天気情報を取得して表示（並列化）
+            // サイドバーの日付ページの気分と天気情報を取得して表示（並列化）
             const weatherElements = document.querySelectorAll('.weather-info');
             const weatherPromises = [];
             
             for (const element of weatherElements) {
                 const pageTitle = element.dataset.pageTitle;
+                const pageId = element.dataset.pageId;
                 
                 // タイトルが「YYYY年M月D日」形式かチェック
                 const dateMatch = pageTitle.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
@@ -940,24 +941,40 @@
                     const day = parseInt(dateMatch[3]);
                     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     
-                    // 全ての天気リクエストを並列実行
+                    // ページデータを取得して気分を表示
                     weatherPromises.push(
-                        fetch(`/api/weather?date=${dateStr}`)
+                        fetch(`/api/pages/${pageId}`)
                             .then(response => response.ok ? response.json() : null)
-                            .then(weather => {
-                                if (weather && weather.temp_max !== null && weather.temp_min !== null) {
-                                    element.innerHTML = `${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
-                                    element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
+                            .then(page => {
+                                if (page && page.mood) {
+                                    const moods = ['😢', '😟', '😐', '😊', '😄'];
+                                    const moodEmoji = moods[page.mood - 1] || '';
+                                    element.innerHTML = moodEmoji;
+                                    element.title = `今日の気分: ${moodEmoji}`;
                                 }
                             })
                             .catch(() => {
-                                // 天気データ取得失敗時は何もしない
+                                // 失敗時は何もしない
                             })
                     );
+                    
+                    // 天気情報も取得（オプション）
+                    // weatherPromises.push(
+                    //     fetch(`/api/weather?date=${dateStr}`)
+                    //         .then(response => response.ok ? response.json() : null)
+                    //         .then(weather => {
+                    //             if (weather && weather.temp_max !== null && weather.temp_min !== null) {
+                    //                 const currentHtml = element.innerHTML;
+                    //                 element.innerHTML = `${currentHtml} ${weather.weather_icon} ${Math.round(weather.temp_max)}°`;
+                    //                 element.title = `${Math.round(weather.temp_max)}°C / ${Math.round(weather.temp_min)}°C`;
+                    //             }
+                    //         })
+                    //         .catch(() => {})
+                    // );
                 }
             }
             
-            // 全ての天気リクエストを並列待機（タイムアウト30秒）
+            // 全てのリクエストを並列待機（タイムアウト30秒）
             await Promise.race([
                 Promise.all(weatherPromises),
                 new Promise(resolve => setTimeout(resolve, 30000))
