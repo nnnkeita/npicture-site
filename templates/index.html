@@ -813,18 +813,9 @@
             });
         }
 
-        async function loadMoodData() {
-            if (!currentPageId) return;
-            try {
-                const response = await fetch(`/api/pages/${currentPageId}`);
-                if (response.ok) {
-                    const page = await response.json();
-                    const mood = page.mood || 0;
-                    updateMoodUI(mood);
-                }
-            } catch (error) {
-                console.warn('Failed to load mood data:', error);
-            }
+        function loadMoodData(page) {
+            const mood = page.mood || 0;
+            updateMoodUI(mood);
         }
 
         function updateMoodUI(mood) {
@@ -866,20 +857,11 @@
         }
 
         // --- 感謝日記機能 ---
-        async function loadGratitudeData() {
-            if (!currentPageId) return;
-            try {
-                const response = await fetch(`/api/pages/${currentPageId}`);
-                if (response.ok) {
-                    const page = await response.json();
-                    const gratitudeText = page.gratitude_text || '';
-                    const gratitudeTextarea = document.getElementById('gratitude-text');
-                    if (gratitudeTextarea) {
-                        gratitudeTextarea.value = gratitudeText;
-                    }
-                }
-            } catch (error) {
-                console.warn('Failed to load gratitude data:', error);
+        function loadGratitudeData(page) {
+            const gratitudeText = page.gratitude_text || '';
+            const gratitudeTextarea = document.getElementById('gratitude-text');
+            if (gratitudeTextarea) {
+                gratitudeTextarea.value = gratitudeText;
             }
         }
 
@@ -905,8 +887,10 @@
             }
         }
 
-        // 感謝日記のテキストエリアにイベントリスナーを設定
+        // 感謝日記のテキストエリアにイベントリスナーを設定（一度だけ）
+        let gratitudeJournalSetup = false;
         function setupGratitudeJournal() {
+            if (gratitudeJournalSetup) return;
             const gratitudeTextarea = document.getElementById('gratitude-text');
             if (gratitudeTextarea) {
                 // デバウンスして保存
@@ -917,6 +901,7 @@
                         saveGratitudeData();
                     }, 500); // 500ms後に自動保存
                 });
+                gratitudeJournalSetup = true;
             }
         }
 
@@ -1444,8 +1429,8 @@
                 moodTracker.classList.remove('hidden');
                 gratitudeJournal.classList.remove('hidden');
                 setupMoodTracker();
-                loadMoodData();
-                loadGratitudeData();
+                loadMoodData(page);
+                loadGratitudeData(page);
             } else {
                 moodTracker.classList.add('hidden');
                 gratitudeJournal.classList.add('hidden');
