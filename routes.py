@@ -91,7 +91,7 @@ def register_routes(app):
             # 2. カテゴリーページ自体のブロックを取得
             cursor.execute('''
                 SELECT * FROM blocks 
-                WHERE page_id = ? AND type IN ('todo', 'text', 'h1', 'calorie', 'speak', 'toggle', 'book', 'image')
+                WHERE page_id = ?
                 ORDER BY position
             ''', (category_page['id'],))
             blocks = [dict(row) for row in cursor.fetchall()]

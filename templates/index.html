@@ -1477,6 +1477,15 @@
             document.getElementById('save-status').innerText = '保存済み';
         }
 
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         async function loadCategoryList(categoryTitle) {
             // カテゴリーの全項目を一覧表示（筋トレ、英語学習、食事対応）
             console.log(`📊 Loading all ${categoryTitle} items...`);
@@ -1557,27 +1566,31 @@
                         blockDiv.className = 'flex items-start gap-2 text-gray-700';
                         
                         if (block.type === 'h1') {
-                            blockDiv.innerHTML = `<span class="text-xl font-bold text-gray-800 w-full">${block.content || ''}</span>`;
+                            blockDiv.innerHTML = `<span class="text-xl font-bold text-gray-800 w-full">${escapeHtml(block.content || '')}</span>`;
                         } else if (block.type === 'todo') {
                             // todoブロックはcontentが空でも表示（チェックボックスのみなど）
-                            if (block.content) {
+                            if (block.content || block.checked) {
                                 const isChecked = block.checked ? 'checked' : '';
                                 const strikethrough = block.checked ? 'line-through text-gray-400' : '';
                                 blockDiv.innerHTML = `
                                     <input type="checkbox" ${isChecked} disabled class="mt-1.5 rounded text-blue-500 cursor-not-allowed">
-                                    <span class="text-gray-700 ${strikethrough}">${block.content}</span>
+                                    <span class="text-gray-700 ${strikethrough}">${escapeHtml(block.content || '')}</span>
                                 `;
                             }
                         } else if (block.type === 'text') {
-                            if (block.content) {
-                                blockDiv.innerHTML = `<span class="text-gray-600">${block.content}</span>`;
+                            const textContent = block.content || block.details || '';
+                            if (textContent) {
+                                const textWithBreaks = escapeHtml(textContent).replace(/\n/g, '<br>');
+                                blockDiv.innerHTML = `<span class="text-gray-600">${textWithBreaks}</span>`;
                             }
                         } else if (block.type === 'speak') {
-                            if (block.content) {
+                            const speakContent = block.content || block.details || '';
+                            if (speakContent) {
+                                const speakWithBreaks = escapeHtml(speakContent).replace(/\n/g, '<br>');
                                 blockDiv.innerHTML = `
                                     <div class="w-full border border-purple-100 bg-white rounded px-3 py-2">
                                         <div class="text-xs text-purple-600 font-semibold mb-1">🔊 読み上げ</div>
-                                        <div class="text-gray-700 whitespace-pre-wrap">${block.content}</div>
+                                        <div class="text-gray-700 whitespace-pre-wrap">${speakWithBreaks}</div>
                                     </div>
                                 `;
                             }
@@ -1585,10 +1598,12 @@
                             const title = block.content || '';
                             const details = block.details || '';
                             if (title || details) {
+                                const safeTitle = escapeHtml(title);
+                                const safeDetails = escapeHtml(details).replace(/\n/g, '<br>');
                                 blockDiv.innerHTML = `
                                     <div class="w-full">
-                                        ${title ? `<div class=\"font-semibold text-gray-800\">${title}</div>` : ''}
-                                        ${details ? `<div class=\"text-gray-600 whitespace-pre-wrap mt-1\">${details}</div>` : ''}
+                                        ${title ? `<div class=\"font-semibold text-gray-800\">${safeTitle}</div>` : ''}
+                                        ${details ? `<div class=\"text-gray-600 whitespace-pre-wrap mt-1\">${safeDetails}</div>` : ''}
                                     </div>
                                 `;
                             }
@@ -1602,20 +1617,41 @@
                                 blockDiv.innerHTML = `
                                     <div class="w-full border border-blue-100 bg-white rounded px-3 py-2">
                                         <div class="text-xs text-blue-600 font-semibold mb-1">📚 読書</div>
-                                        <div class="text-gray-800">${title}</div>
+                                        <div class="text-gray-800">${escapeHtml(title)}</div>
                                         <div class="text-xs text-gray-500 mt-1">進捗: ${progressText}</div>
+                                    </div>
+                                `;
+                            }
+                        } else if (block.type === 'image') {
+                            if (block.content) {
+                                blockDiv.innerHTML = `
+                                    <div class="w-full">
+                                        <img src="${block.content}" alt="image" class="max-w-full rounded border border-gray-200" />
                                     </div>
                                 `;
                             }
                         } else if (block.type === 'calorie') {
                             // calorieブロックは複数行のテキストなので改行を保持
                             if (block.content) {
-                                const contentWithLineBreaks = block.content.replace(/\n/g, '<br>');
+                                const contentWithLineBreaks = escapeHtml(block.content).replace(/\n/g, '<br>');
                                 blockDiv.innerHTML = `<div class="text-gray-700 whitespace-pre-wrap">${contentWithLineBreaks}</div>`;
                             }
                         } else {
-                            if (block.content) {
-                                blockDiv.innerHTML = `<span class="text-gray-600 whitespace-pre-wrap">${block.content}</span>`;
+                            const fallbackContent = block.content || block.details || '';
+                            if (fallbackContent) {
+                                const fallbackWithBreaks = escapeHtml(fallbackContent).replace(/\n/g, '<br>');
+                                blockDiv.innerHTML = `<span class="text-gray-600 whitespace-pre-wrap">${fallbackWithBreaks}</span>`;
+                            } else if (block.props) {
+                                try {
+                                    const parsedProps = parseBlockProps(block.props) || {};
+                                    const propText = parsedProps.text || parsedProps.content || '';
+                                    if (propText) {
+                                        const propWithBreaks = escapeHtml(propText).replace(/\n/g, '<br>');
+                                        blockDiv.innerHTML = `<span class="text-gray-600 whitespace-pre-wrap">${propWithBreaks}</span>`;
+                                    }
+                                } catch (e) {
+                                    // noop
+                                }
                             }
                         }
                         
