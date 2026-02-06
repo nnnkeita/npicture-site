@@ -1572,11 +1572,50 @@
                             if (block.content) {
                                 blockDiv.innerHTML = `<span class="text-gray-600">${block.content}</span>`;
                             }
+                        } else if (block.type === 'speak') {
+                            if (block.content) {
+                                blockDiv.innerHTML = `
+                                    <div class="w-full border border-purple-100 bg-white rounded px-3 py-2">
+                                        <div class="text-xs text-purple-600 font-semibold mb-1">🔊 読み上げ</div>
+                                        <div class="text-gray-700 whitespace-pre-wrap">${block.content}</div>
+                                    </div>
+                                `;
+                            }
+                        } else if (block.type === 'toggle') {
+                            const title = block.content || '';
+                            const details = block.details || '';
+                            if (title || details) {
+                                blockDiv.innerHTML = `
+                                    <div class="w-full">
+                                        ${title ? `<div class=\"font-semibold text-gray-800\">${title}</div>` : ''}
+                                        ${details ? `<div class=\"text-gray-600 whitespace-pre-wrap mt-1\">${details}</div>` : ''}
+                                    </div>
+                                `;
+                            }
+                        } else if (block.type === 'book') {
+                            const bookData = parseBlockProps(block.props) || { title: '', currentPage: 0, pages: 0 };
+                            const title = bookData.title || '';
+                            if (title) {
+                                const currentPage = bookData.currentPage || 0;
+                                const pages = bookData.pages || 0;
+                                const progressText = pages ? `${currentPage} / ${pages}` : `${currentPage}`;
+                                blockDiv.innerHTML = `
+                                    <div class="w-full border border-blue-100 bg-white rounded px-3 py-2">
+                                        <div class="text-xs text-blue-600 font-semibold mb-1">📚 読書</div>
+                                        <div class="text-gray-800">${title}</div>
+                                        <div class="text-xs text-gray-500 mt-1">進捗: ${progressText}</div>
+                                    </div>
+                                `;
+                            }
                         } else if (block.type === 'calorie') {
                             // calorieブロックは複数行のテキストなので改行を保持
                             if (block.content) {
                                 const contentWithLineBreaks = block.content.replace(/\n/g, '<br>');
                                 blockDiv.innerHTML = `<div class="text-gray-700 whitespace-pre-wrap">${contentWithLineBreaks}</div>`;
+                            }
+                        } else {
+                            if (block.content) {
+                                blockDiv.innerHTML = `<span class="text-gray-600 whitespace-pre-wrap">${block.content}</span>`;
                             }
                         }
                         
