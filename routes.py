@@ -822,6 +822,151 @@ def register_routes(app):
 
         return jsonify({'answer': answer})
 
+    @app.route('/api/ai/chat', methods=['POST'])
+    def ai_chat():
+        data = request.json or {}
+        messages = data.get('messages') or []
+        if not isinstance(messages, list) or not messages:
+            return jsonify({'error': 'Messages are required'}), 400
+
+        api_key = os.getenv('OPENAI_API_KEY', '')
+        if not api_key:
+            return jsonify({'error': 'OPENAI_API_KEY is not set'}), 400
+
+        # 直近ユーザー発話から簡易コンテキストを取得
+        last_user = None
+        for msg in reversed(messages):
+            if msg.get('role') == 'user' and msg.get('content'):
+                last_user = msg.get('content')
+                break
+
+        context_text = ''
+        if last_user:
+            conn = get_db()
+            cursor = conn.cursor()
+            results = []
+            try:
+                search_query = f"{last_user}*"
+                sql = '''
+                    SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content,
+                           snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet,
+                           pages.parent_id
+                    FROM blocks_fts
+                    JOIN blocks ON blocks_fts.rowid = blocks.id
+                    JOIN pages ON blocks.page_id = pages.id
+                    WHERE blocks_fts MATCH ?
+                    ORDER BY rank
+                    LIMIT 15
+                '''
+                cursor.execute(sql, (search_query,))
+                results = [dict(row) for row in cursor.fetchall()]
+            except Exception:
+                results = []
+
+            if not results:
+                terms = [t for t in re.split(r'\s+', last_user) if t]
+                like_sql = '''
+                    SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content,
+                           '' as snippet,
+                           pages.parent_id
+                    FROM blocks
+                    JOIN pages ON blocks.page_id = pages.id
+                    WHERE blocks.content LIKE ? OR pages.title LIKE ?
+                    ORDER BY pages.updated_at DESC
+                    LIMIT 20
+                '''
+                combined = []
+                for term in terms[:5]:
+                    pattern = f"%{term}%"
+                    cursor.execute(like_sql, (pattern, pattern))
+                    combined.extend([dict(row) for row in cursor.fetchall()])
+                seen = set()
+                results = []
+                for row in combined:
+                    key = row.get('block_id') or row.get('page_id')
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    results.append(row)
+
+            context_lines = []
+            for result in results:
+                breadcrumb = []
+                current_id = result.get('parent_id')
+                while current_id:
+                    cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
+                    parent_row = cursor.fetchone()
+                    if parent_row:
+                        parent_dict = dict(parent_row)
+                        breadcrumb.insert(0, {
+                            'id': parent_dict['id'],
+                            'title': parent_dict['title'],
+                            'icon': parent_dict['icon']
+                        })
+                        current_id = parent_dict['parent_id']
+                    else:
+                        break
+                breadcrumb_text = ' / '.join([f"{b['icon']} {b['title']}" for b in breadcrumb])
+                page_title = result.get('page_title') or ''
+                snippet = result.get('snippet') or result.get('content') or ''
+                snippet = re.sub(r'<[^>]+>', '', snippet)
+                if result.get('content'):
+                    snippet = (result.get('content') or '')[:400]
+                location = f"{breadcrumb_text} / {page_title}" if breadcrumb_text else page_title
+                context_lines.append(f"- {location}: {snippet}")
+
+            context_text = '\n'.join(context_lines)[:8000]
+            conn.close()
+
+        system_prompt = (
+            'あなたは日記アプリのAIアシスタントです。'
+            '会話に自然に答えてください。'
+            'ノート文脈が与えられた場合はそれを優先して根拠にしてください。'
+            '根拠がない内容は断定しないでください。'
+        )
+
+        input_messages = [{'role': 'system', 'content': system_prompt}]
+        if context_text:
+            input_messages.append({'role': 'system', 'content': f"ノート文脈:\n{context_text}"})
+
+        trimmed = messages[-12:]
+        input_messages.extend(trimmed)
+
+        payload = {
+            'model': 'gpt-4o',
+            'input': input_messages,
+            'temperature': 0.7
+        }
+
+        try:
+            req = urllib.request.Request(
+                'https://api.openai.com/v1/responses',
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_data = json.loads(resp.read().decode('utf-8'))
+            answer = resp_data.get('output_text')
+            if not answer:
+                parts = []
+                for item in resp_data.get('output', []):
+                    if item.get('type') == 'message':
+                        for content in item.get('content', []):
+                            if content.get('type') == 'output_text':
+                                parts.append(content.get('text', ''))
+                answer = '\n'.join([p for p in parts if p]).strip()
+            if not answer:
+                answer = '回答を生成できませんでした。'
+        except urllib.error.HTTPError as e:
+            return jsonify({'error': f'OpenAI API error: {e.code}'}), 502
+        except Exception:
+            return jsonify({'error': 'OpenAI API request failed'}), 502
+
+        return jsonify({'answer': answer})
+
     @app.route('/api/pages/<int:page_id>/blocks', methods=['POST'])
     def create_block(page_id):
         data = request.json
