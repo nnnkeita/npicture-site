@@ -76,8 +76,14 @@ if STRIPE_SECRET_KEY:
 # === 認証ガード ===
 @app.before_request
 def require_login():
-    # 認証は完全に無効化
-    return
+    if not AUTH_ENABLED:
+        return
+    if request.path.startswith('/static/'):
+        return
+    if request.endpoint in {'login', 'setup', 'webhook_deploy', 'stripe_webhook', 'reset_password', 'forgot_password'}:
+        return
+    if not session.get('user_id'):
+        return redirect(url_for('login'))
 
 
 # === ページルート ===
