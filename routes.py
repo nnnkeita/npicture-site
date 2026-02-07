@@ -305,6 +305,21 @@ def register_routes(app):
                 ('英語学習', '🌍'),
                 ('食事', '🍽️'),
             ]
+
+            # 必須子ページの重複を整理（最初の1つだけ残す）
+            required_titles = {title_req for title_req, _ in required_children}
+            cursor.execute(
+                'SELECT id, title FROM pages WHERE parent_id = ? AND is_deleted = 0 ORDER BY position',
+                (new_page_id,)
+            )
+            seen_titles = set()
+            for row in cursor.fetchall():
+                title_value = row['title']
+                if title_value in required_titles:
+                    if title_value in seen_titles:
+                        mark_tree_deleted(cursor, row['id'], is_deleted=True)
+                    else:
+                        seen_titles.add(title_value)
             
             next_pos = get_next_position(cursor, new_page_id)
             for title_req, icon_req in required_children:
