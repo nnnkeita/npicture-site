@@ -600,8 +600,9 @@ def register_routes(app):
 
         conn = get_db()
         cursor = conn.cursor()
-        search_query = f"{query}*"
+        results = []
         try:
+            search_query = f"{query}*"
             sql = '''
                 SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content,
                        snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet,
@@ -615,26 +616,53 @@ def register_routes(app):
             '''
             cursor.execute(sql, (search_query,))
             results = [dict(row) for row in cursor.fetchall()]
-
-            for result in results:
-                breadcrumb = []
-                current_id = result.get('parent_id')
-                while current_id:
-                    cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
-                    parent_row = cursor.fetchone()
-                    if parent_row:
-                        parent_dict = dict(parent_row)
-                        breadcrumb.insert(0, {
-                            'id': parent_dict['id'],
-                            'title': parent_dict['title'],
-                            'icon': parent_dict['icon']
-                        })
-                        current_id = parent_dict['parent_id']
-                    else:
-                        break
-                result['breadcrumb'] = breadcrumb
         except Exception:
             results = []
+
+        if not results:
+            terms = [t for t in re.split(r'\s+', query) if t]
+            like_terms = terms if terms else [query]
+            like_sql = '''
+                SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content,
+                       '' as snippet,
+                       pages.parent_id
+                FROM blocks
+                JOIN pages ON blocks.page_id = pages.id
+                WHERE blocks.content LIKE ? OR pages.title LIKE ?
+                ORDER BY pages.updated_at DESC
+                LIMIT 50
+            '''
+            combined = []
+            for term in like_terms:
+                pattern = f"%{term}%"
+                cursor.execute(like_sql, (pattern, pattern))
+                combined.extend([dict(row) for row in cursor.fetchall()])
+            seen = set()
+            results = []
+            for row in combined:
+                key = row.get('block_id') or row.get('page_id')
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(row)
+
+        for result in results:
+            breadcrumb = []
+            current_id = result.get('parent_id')
+            while current_id:
+                cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
+                parent_row = cursor.fetchone()
+                if parent_row:
+                    parent_dict = dict(parent_row)
+                    breadcrumb.insert(0, {
+                        'id': parent_dict['id'],
+                        'title': parent_dict['title'],
+                        'icon': parent_dict['icon']
+                    })
+                    current_id = parent_dict['parent_id']
+                else:
+                    break
+            result['breadcrumb'] = breadcrumb
         conn.close()
 
         if not results:
@@ -646,6 +674,8 @@ def register_routes(app):
             page_title = result.get('page_title') or ''
             snippet = result.get('snippet') or result.get('content') or ''
             snippet = re.sub(r'<[^>]+>', '', snippet)
+            if result.get('content'):
+                snippet = (result.get('content') or '')[:400]
             if breadcrumb_text:
                 location = f"{breadcrumb_text} / {page_title}"
             else:
@@ -662,7 +692,7 @@ def register_routes(app):
         user_prompt = f"質問: {query}\n\nノート:\n{context}"
 
         payload = {
-            'model': 'gpt-4o-mini',
+            'model': 'gpt-4o',
             'input': [
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_prompt}
