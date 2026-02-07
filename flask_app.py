@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import (
-    init_db, get_or_create_inbox, get_user_count, get_user_by_username, create_user,
+    init_db, get_or_create_inbox, get_or_create_finished, get_user_count, get_user_by_username, create_user,
     get_user_by_id, update_user_password, set_password_reset_token, get_password_reset_token,
     mark_password_reset_token_used, update_user_stripe_customer, update_user_subscription,
     get_user_by_stripe_customer
@@ -97,6 +97,14 @@ def inbox_page():
     inbox = get_or_create_inbox()
     if inbox:
         return render_template('index.html', inbox_id=inbox['id'], tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
+    return render_template('index.html', tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
+
+@app.route('/finished')
+def finished_page():
+    """読了ページへのショートカットURL"""
+    finished = get_or_create_finished()
+    if finished:
+        return render_template('index.html', finished_id=finished['id'], tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
     return render_template('index.html', tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
 
 @app.route('/uploads/<filename>')

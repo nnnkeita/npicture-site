@@ -400,3 +400,91 @@ def get_or_create_inbox():
         inbox = cursor.fetchone()
     conn.close()
     return dict(inbox) if inbox else None
+
+def get_or_create_finished():
+    """'読了'ページを取得、なければ作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND parent_id IS NULL LIMIT 1', ('📚 読了',))
+    finished = cursor.fetchone()
+    if not finished:
+        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+        max_pos = cursor.fetchone()[0]
+        new_pos = (max_pos if max_pos is not None else -1) + 1
+        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                       ('📚 読了', '📚', None, new_pos))
+        finished_id = cursor.lastrowid
+
+        children = [
+            {
+                'title': '読了した本',
+                'icon': '✅',
+                'blocks': [
+                    {'type': 'h1', 'content': '読了した本'},
+                    {'type': 'text', 'content': ''},
+                ]
+            },
+            {
+                'title': '日々の感想',
+                'icon': '📝',
+                'blocks': [
+                    {'type': 'h1', 'content': '日々の感想'},
+                    {'type': 'text', 'content': ''},
+                ]
+            }
+        ]
+
+        for i, child in enumerate(children):
+            cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                           (child['title'], child['icon'], finished_id, (i + 1) * 1000.0))
+            child_id = cursor.lastrowid
+            for j, block in enumerate(child['blocks']):
+                cursor.execute(
+                    'INSERT INTO blocks (page_id, type, content, position) VALUES (?, ?, ?, ?)',
+                    (child_id, block.get('type', 'text'), block.get('content', ''), (j + 1) * 1000.0)
+                )
+
+        conn.commit()
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (finished_id,))
+        finished = cursor.fetchone()
+    else:
+        finished_id = finished['id']
+        cursor.execute('SELECT title FROM pages WHERE parent_id = ? AND is_deleted = 0', (finished_id,))
+        existing_titles = {row['title'] for row in cursor.fetchall()}
+
+        children = [
+            {
+                'title': '読了した本',
+                'icon': '✅',
+                'blocks': [
+                    {'type': 'h1', 'content': '読了した本'},
+                    {'type': 'text', 'content': ''},
+                ]
+            },
+            {
+                'title': '日々の感想',
+                'icon': '📝',
+                'blocks': [
+                    {'type': 'h1', 'content': '日々の感想'},
+                    {'type': 'text', 'content': ''},
+                ]
+            }
+        ]
+
+        next_pos = get_next_position(cursor, finished_id)
+        for child in children:
+            if child['title'] in existing_titles:
+                continue
+            cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                           (child['title'], child['icon'], finished_id, next_pos))
+            child_id = cursor.lastrowid
+            next_pos += 1000.0
+            for j, block in enumerate(child['blocks']):
+                cursor.execute(
+                    'INSERT INTO blocks (page_id, type, content, position) VALUES (?, ?, ?, ?)',
+                    (child_id, block.get('type', 'text'), block.get('content', ''), (j + 1) * 1000.0)
+                )
+        conn.commit()
+
+    conn.close()
+    return dict(finished) if finished else None

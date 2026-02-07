@@ -42,6 +42,13 @@ def register_routes(app):
         inbox = get_or_create_inbox()
         return jsonify(inbox if inbox else {'error': 'Failed to create inbox'}), 200 if inbox else 500
 
+    @app.route('/api/finished', methods=['GET'])
+    def get_finished():
+        """'読了'ページを取得"""
+        from database import get_or_create_finished
+        finished = get_or_create_finished()
+        return jsonify(finished if finished else {'error': 'Failed to create finished'}), 200 if finished else 500
+
     @app.route('/api/pages', methods=['GET'])
     def get_pages():
         conn = get_db()

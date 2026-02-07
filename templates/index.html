@@ -298,10 +298,13 @@
         <div class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="page-list" oncontextmenu="handleSidebarRightClick(event, null)">
         </div>
 
-        <!-- あとで調べるリンク -->
-        <div class="px-2 py-2 border-t border-gray-200">
+        <!-- あとで調べる / 読了リンク -->
+        <div class="px-2 py-2 border-t border-gray-200 space-y-1">
             <a href="/inbox" class="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded flex items-center gap-2 bg-blue-50 cursor-pointer">
                 <span>🔖</span> あとで調べる
+            </a>
+            <a href="/finished" class="w-full text-left px-3 py-2 text-sm font-medium text-purple-600 hover:bg-purple-50 rounded flex items-center gap-2 bg-purple-50 cursor-pointer">
+                <span>📚</span> 読了
             </a>
         </div>
 
@@ -585,8 +588,9 @@
                 });
         }
 
-        // /inbox から渡される場合は値が入る（それ以外は null）
+        // /inbox, /finished から渡される場合は値が入る（それ以外は null）
         window.INBOX_ID = {{ inbox_id|default(None)|tojson }};
+        window.FINISHED_ID = {{ finished_id|default(None)|tojson }};
 
         let currentPageId = null;
         let typingTimer;
@@ -669,8 +673,10 @@
             renderCalendar();
             // 感謝日記の設定
             setupGratitudeJournal();
-            // /inbox で開かれた場合は単一ページを開く。それ以外は今日のページ。
-            if (window.INBOX_ID !== null) {
+            // /finished または /inbox で開かれた場合は単一ページを開く。それ以外は今日のページ。
+            if (window.FINISHED_ID !== null) {
+                loadPage(window.FINISHED_ID);
+            } else if (window.INBOX_ID !== null) {
                 loadPage(window.INBOX_ID);
             } else {
                 openTodayPage();
