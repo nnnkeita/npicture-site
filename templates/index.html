@@ -424,18 +424,6 @@
                               style="min-height: 80px;"></textarea>
                 </div>
 
-                <!-- AI検索 -->
-                <div id="ai-search" class="mb-6 p-4 bg-white rounded-lg border border-gray-200">
-                    <div class="flex items-center gap-2 mb-3">
-                        <span class="text-lg">🤖</span>
-                        <span class="text-sm font-semibold text-gray-700">AI検索</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <input id="ai-query" type="text" placeholder="例: あの会議は何日にしたっけ？" class="flex-1 border border-gray-200 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:border-transparent">
-                        <button type="button" onclick="askAI()" class="px-3 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">検索</button>
-                    </div>
-                    <div id="ai-answer" class="mt-3 text-sm text-gray-700 whitespace-pre-wrap"></div>
-                </div>
                 
                 <!-- 通常表示（詳細タブ） -->
                 <div id="category-detail-view" class="category-view">
@@ -486,9 +474,11 @@
 
     <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-start justify-center pt-20" onclick="closeSearch(event)">
         <div class="bg-white w-full max-w-xl rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[60vh]">
-            <div class="p-4 border-b border-gray-200">
-                <input type="text" id="search-input" class="w-full text-lg border-none focus:ring-0" placeholder="検索..." oninput="performSearch()">
+            <div class="p-4 border-b border-gray-200 flex items-center gap-2">
+                <input type="text" id="search-input" class="flex-1 text-lg border-none focus:ring-0" placeholder="検索..." oninput="performSearch()">
+                <button type="button" onclick="askAI()" class="px-3 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">AI検索</button>
             </div>
+            <div id="ai-search-answer" class="px-4 py-3 border-b border-gray-100 text-sm text-gray-700 whitespace-pre-wrap hidden"></div>
             <div id="search-results" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
         </div>
     </div>
@@ -709,11 +699,12 @@
         }
 
         async function askAI() {
-            const input = document.getElementById('ai-query');
-            const answer = document.getElementById('ai-answer');
+            const input = document.getElementById('search-input');
+            const answer = document.getElementById('ai-search-answer');
             if (!input || !answer) return;
             const query = (input.value || '').trim();
             if (!query) return;
+            answer.classList.remove('hidden');
             answer.textContent = '検索中...';
             try {
                 const res = await fetch('/api/ai/query', {
@@ -2218,7 +2209,15 @@
             await fetch(`/api/pages/${currentPageId}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ cover_image: '' }) });
             loadPage(currentPageId);
         }
-        function openSearch() { document.getElementById('search-modal').classList.remove('hidden'); document.getElementById('search-input').focus(); }
+        function openSearch() {
+            document.getElementById('search-modal').classList.remove('hidden');
+            document.getElementById('search-input').focus();
+            const answer = document.getElementById('ai-search-answer');
+            if (answer) {
+                answer.textContent = '';
+                answer.classList.add('hidden');
+            }
+        }
         function closeSearch(e) { if(e.target.id === 'search-modal') document.getElementById('search-modal').classList.add('hidden'); }
         async function performSearch() {
             const query = document.getElementById('search-input').value;
