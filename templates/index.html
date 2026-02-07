@@ -816,6 +816,7 @@
         function loadMoodData(page) {
             const mood = page.mood || 0;
             updateMoodUI(mood);
+            updateSidebarMood(page?.id, mood);
         }
 
         function updateMoodUI(mood) {
@@ -840,6 +841,31 @@
             }
         }
 
+        function updateSidebarMood(pageId, mood) {
+            if (!pageId) return;
+            const element = document.querySelector(`.weather-info[data-page-id="${pageId}"]`);
+            if (!element) return;
+
+            const moodEmojis = ['😢', '😟', '😐', '😊', '😄'];
+            const moodEmoji = mood > 0 && mood <= 5 ? moodEmojis[mood - 1] : '';
+
+            const currentText = (element.textContent || '').trim();
+            const weatherPart = currentText.replace(/^[😢😟😐😊😄]\s*/u, '').trim();
+            const nextText = moodEmoji ? (weatherPart ? `${moodEmoji} ${weatherPart}` : moodEmoji) : weatherPart;
+
+            element.textContent = nextText;
+
+            if (moodEmoji) {
+                const moodTitles = ['最悪', '悪い', '普通', '良い', '最高！'];
+                const moodTitle = `気分: ${moodEmoji} ${moodTitles[mood - 1]}`;
+                const existingTitle = element.title || '';
+                const weatherTitle = existingTitle.replace(/^気分:.*?(?:\s\/\s)?/u, '').trim();
+                element.title = weatherTitle ? `${moodTitle} / ${weatherTitle}` : moodTitle;
+            } else {
+                element.title = element.title.replace(/^気分:.*?(?:\s\/\s)?/u, '').trim();
+            }
+        }
+
         async function saveMood(mood) {
             if (!currentPageId) return;
             try {
@@ -850,6 +876,7 @@
                 });
                 if (response.ok) {
                     updateMoodUI(mood);
+                    updateSidebarMood(currentPageId, mood);
                 }
             } catch (error) {
                 console.error('Failed to save mood:', error);
