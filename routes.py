@@ -587,6 +587,118 @@ def register_routes(app):
         conn.close()
         return jsonify(results)
 
+    @app.route('/api/ai/query', methods=['POST'])
+    def ai_query():
+        data = request.json or {}
+        query = (data.get('query') or '').strip()
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+
+        api_key = os.getenv('OPENAI_API_KEY', '')
+        if not api_key:
+            return jsonify({'error': 'OPENAI_API_KEY is not set'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+        search_query = f"{query}*"
+        try:
+            sql = '''
+                SELECT blocks.id as block_id, blocks.page_id, pages.title as page_title, pages.icon, blocks.content,
+                       snippet(blocks_fts, 0, '<b>', '</b>', '...', 10) as snippet,
+                       pages.parent_id
+                FROM blocks_fts
+                JOIN blocks ON blocks_fts.rowid = blocks.id
+                JOIN pages ON blocks.page_id = pages.id
+                WHERE blocks_fts MATCH ?
+                ORDER BY rank
+                LIMIT 30
+            '''
+            cursor.execute(sql, (search_query,))
+            results = [dict(row) for row in cursor.fetchall()]
+
+            for result in results:
+                breadcrumb = []
+                current_id = result.get('parent_id')
+                while current_id:
+                    cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
+                    parent_row = cursor.fetchone()
+                    if parent_row:
+                        parent_dict = dict(parent_row)
+                        breadcrumb.insert(0, {
+                            'id': parent_dict['id'],
+                            'title': parent_dict['title'],
+                            'icon': parent_dict['icon']
+                        })
+                        current_id = parent_dict['parent_id']
+                    else:
+                        break
+                result['breadcrumb'] = breadcrumb
+        except Exception:
+            results = []
+        conn.close()
+
+        if not results:
+            return jsonify({'answer': '見つかりませんでした。'}), 200
+
+        context_lines = []
+        for result in results:
+            breadcrumb_text = ' / '.join([f"{b['icon']} {b['title']}" for b in result.get('breadcrumb', [])])
+            page_title = result.get('page_title') or ''
+            snippet = result.get('snippet') or result.get('content') or ''
+            snippet = re.sub(r'<[^>]+>', '', snippet)
+            if breadcrumb_text:
+                location = f"{breadcrumb_text} / {page_title}"
+            else:
+                location = page_title
+            context_lines.append(f"- {location}: {snippet}")
+
+        context = '\n'.join(context_lines)[:12000]
+        system_prompt = (
+            'あなたは日記アプリの検索アシスタントです。'
+            '与えられたノートの情報だけを根拠に、質問に短く答えてください。'
+            '情報が不足している場合は「見つかりませんでした。」と答えてください。'
+            '可能なら日付やページ名を明記し、最後に「根拠: ...」の形式で関連ページ名を列挙してください。'
+        )
+        user_prompt = f"質問: {query}\n\nノート:\n{context}"
+
+        payload = {
+            'model': 'gpt-4o-mini',
+            'input': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt}
+            ],
+            'temperature': 0.2
+        }
+
+        try:
+            req = urllib.request.Request(
+                'https://api.openai.com/v1/responses',
+                data=json.dumps(payload).encode('utf-8'),
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_data = json.loads(resp.read().decode('utf-8'))
+            answer = resp_data.get('output_text')
+            if not answer:
+                parts = []
+                for item in resp_data.get('output', []):
+                    if item.get('type') == 'message':
+                        for content in item.get('content', []):
+                            if content.get('type') == 'output_text':
+                                parts.append(content.get('text', ''))
+                answer = '\n'.join([p for p in parts if p]).strip()
+            if not answer:
+                answer = '見つかりませんでした。'
+        except urllib.error.HTTPError as e:
+            return jsonify({'error': f'OpenAI API error: {e.code}'}), 502
+        except Exception:
+            return jsonify({'error': 'OpenAI API request failed'}), 502
+
+        return jsonify({'answer': answer})
+
     @app.route('/api/pages/<int:page_id>/blocks', methods=['POST'])
     def create_block(page_id):
         data = request.json
