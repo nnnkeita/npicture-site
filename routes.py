@@ -600,6 +600,48 @@ def register_routes(app):
 
         conn = get_db()
         cursor = conn.cursor()
+
+        # 先に特定の質問（例: 筋トレした日）をDBから直接回答
+        if any(key in query for key in ['いつ', '何日', '日付', '日にち']):
+            activity_titles = ['筋トレ', '英語学習', '食事', '読書', '日記']
+            matched_activity = next((t for t in activity_titles if t in query), None)
+            if matched_activity:
+                cursor.execute('''
+                    SELECT p.id, p.parent_id, parent.title as parent_title
+                    FROM pages p
+                    JOIN pages parent ON parent.id = p.parent_id
+                    WHERE p.title = ? AND p.is_deleted = 0 AND parent.is_deleted = 0
+                ''', (matched_activity,))
+                rows = cursor.fetchall()
+
+                date_titles = []
+                for row in rows:
+                    parent_title = row['parent_title'] or ''
+                    if not re.match(r'^\d{4}年\d{1,2}月\d{1,2}日$', parent_title):
+                        continue
+                    cursor.execute('''
+                        SELECT 1 FROM blocks
+                        WHERE page_id = ? AND (
+                            (content IS NOT NULL AND TRIM(content) != '') OR
+                            (details IS NOT NULL AND TRIM(details) != '') OR
+                            checked = 1 OR
+                            (props IS NOT NULL AND TRIM(props) NOT IN ('', '{}'))
+                        )
+                        LIMIT 1
+                    ''', (row['id'],))
+                    if cursor.fetchone():
+                        date_titles.append(parent_title)
+
+                def _date_key(title):
+                    m = re.match(r'^(\d{4})年(\d{1,2})月(\d{1,2})日$', title)
+                    if not m:
+                        return (9999, 99, 99)
+                    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+                date_titles = sorted(set(date_titles), key=_date_key)
+                if date_titles:
+                    conn.close()
+                    return jsonify({'answer': f"{matched_activity}した日: " + '、'.join(date_titles)})
         results = []
         try:
             search_query = f"{query}*"
