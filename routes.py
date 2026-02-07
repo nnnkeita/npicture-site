@@ -642,6 +642,57 @@ def register_routes(app):
                 if date_titles:
                     conn.close()
                     return jsonify({'answer': f"{matched_activity}した日: " + '、'.join(date_titles)})
+
+            # 一般的な「いつ」質問はキーワードから日付を抽出
+            q = re.sub(r'[?？]', '', query)
+            for stop_word in ['いつ', '何日', '日付', '日にち', '何曜日', '教えて', 'って', 'したっけ', 'した', 'して', 'する', 'ですか', 'です']:
+                q = q.replace(stop_word, ' ')
+            for stop_word in ['は', 'を', 'に', 'で', 'の', 'が', 'と', 'へ', 'から', 'まで']:
+                q = q.replace(stop_word, ' ')
+            keywords = [t for t in re.split(r'\s+', q) if t]
+
+            if keywords:
+                date_titles = set()
+                for keyword in keywords:
+                    pattern = f"%{keyword}%"
+                    cursor.execute('''
+                        SELECT blocks.page_id, pages.title as page_title, pages.parent_id
+                        FROM blocks
+                        JOIN pages ON blocks.page_id = pages.id
+                        WHERE blocks.content LIKE ?
+                           OR blocks.details LIKE ?
+                           OR blocks.props LIKE ?
+                           OR pages.title LIKE ?
+                        LIMIT 200
+                    ''', (pattern, pattern, pattern, pattern))
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        page_title = row['page_title'] or ''
+                        parent_id = row['parent_id']
+                        if re.match(r'^\d{4}年\d{1,2}月\d{1,2}日$', page_title):
+                            date_titles.add(page_title)
+                            continue
+                        current_id = parent_id
+                        while current_id:
+                            cursor.execute('SELECT title, parent_id FROM pages WHERE id = ?', (current_id,))
+                            parent_row = cursor.fetchone()
+                            if not parent_row:
+                                break
+                            parent_title = parent_row['title'] or ''
+                            if re.match(r'^\d{4}年\d{1,2}月\d{1,2}日$', parent_title):
+                                date_titles.add(parent_title)
+                                break
+                            current_id = parent_row['parent_id']
+
+                if date_titles:
+                    def _date_key(title):
+                        m = re.match(r'^(\d{4})年(\d{1,2})月(\d{1,2})日$', title)
+                        if not m:
+                            return (9999, 99, 99)
+                        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                    sorted_dates = sorted(date_titles, key=_date_key)
+                    conn.close()
+                    return jsonify({'answer': '該当しそうな日: ' + '、'.join(sorted_dates)})
         results = []
         try:
             search_query = f"{query}*"
