@@ -680,7 +680,7 @@ def register_routes(app):
     def calc_calories():
         """メニュー文字列から概算カロリーを返す"""
         data = request.json or {}
-        raw_lines = data.get('lines', '')
+        raw_lines = data.get('lines', data.get('text', ''))
         if isinstance(raw_lines, list):
             lines = raw_lines
         else:

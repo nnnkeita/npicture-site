@@ -6,42 +6,60 @@
 
     // カロリー結果をレンダリング
     function renderCalorieResult(blockId, data) {
-        if (!data || !data.result) return;
-        
-        const r = data.result;
-        const html = `
-            <div style="margin-top:8px;padding:10px;background:#f9f9f9;border-radius:4px">
-                <div><strong>合計カロリー:</strong> ${r.total_calories} kcal</div>
-                ${r.details && r.details.length > 0 ? `
-                    <div style="margin-top:6px;font-size:0.9em">
-                        ${r.details.map(d => `<div>${d.item}: ${d.calories} kcal (${d.amount})</div>`).join('')}
-                    </div>
-                ` : ''}
-            </div>
-        `;
-        
-        const resultDiv = document.querySelector(`[data-block-id="${blockId}"] .calorie-result`);
-        if (resultDiv) {
-            resultDiv.innerHTML = html;
+        if (!data) return;
+        const r = data.result || data;
+        if (!r) return;
+
+        const totalEl = document.getElementById(`cal-total-${blockId}`);
+        if (totalEl && r.total_kcal !== undefined) {
+            totalEl.textContent = `${r.total_kcal} kcal`;
+        }
+
+        const itemsEl = document.getElementById(`cal-items-${blockId}`);
+        if (itemsEl && Array.isArray(r.items)) {
+            itemsEl.innerHTML = r.items.length
+                ? r.items.map(item => {
+                    const mark = item.is_estimated ? '（推定）' : '';
+                    return `<div>${item.input} → ${item.kcal} kcal ${mark}</div>`;
+                }).join('')
+                : '';
+        }
+
+        const legacyDiv = document.querySelector(`[data-block-id="${blockId}"] .calorie-result`);
+        if (legacyDiv) {
+            legacyDiv.innerHTML = `合計: ${r.total_kcal ?? '-'} kcal`;
         }
     }
 
     // カロリー入力処理
     function handleCalorieInput(blockId, value) {
+        const lines = String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
         fetch('/api/calc-calories', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text: value})
+            body: JSON.stringify({lines})
         })
         .then(res => res.json())
         .then(data => {
             renderCalorieResult(blockId, data);
+            if (data && data.total_kcal !== undefined) {
+                caloriePropsCache[blockId] = caloriePropsCache[blockId] || {};
+                caloriePropsCache[blockId].total_kcal = data.total_kcal;
+                caloriePropsCache[blockId].items = data.items || [];
+                if (data.note) caloriePropsCache[blockId].note = data.note;
+
+                fetch(`/api/blocks/${blockId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ props: JSON.stringify(caloriePropsCache[blockId]) })
+                }).catch(err => console.warn('Failed to save calorie props:', err));
+            }
         })
         .catch(err => {
             console.error('Calorie calculation error:', err);
-            const resultDiv = document.querySelector(`[data-block-id="${blockId}"] .calorie-result`);
-            if (resultDiv) {
-                resultDiv.innerHTML = '<div style="color:red">カロリー計算エラー</div>';
+            const itemsEl = document.getElementById(`cal-items-${blockId}`);
+            if (itemsEl) {
+                itemsEl.innerHTML = '<div style="color:red">カロリー計算エラー</div>';
             }
         });
     }
