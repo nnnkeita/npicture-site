@@ -1809,6 +1809,7 @@
                             <div class="flex items-center gap-2">
                                 <label class="text-sm text-gray-600 min-w-fit">現在のページ:</label>
                                 <input id="book-currentpage-${block.id}" type="number" min="0" class="border border-blue-100 focus:ring-0 rounded px-2 py-1 w-20" value="${bookData.currentPage || 0}" onfocus="setFocusedBlock(${block.id})" oninput="updateBookData(${block.id}, 'currentPage', parseInt(this.value) || 0)">
+                                <div id="book-delta-${block.id}" class="text-xs text-gray-500 whitespace-nowrap">今日: -</div>
                                 <div id="book-scroll-${block.id}" class="flex-1 flex items-center gap-1">
                                     <div id="book-pages-list-${block.id}" class="flex gap-1" style="flex-wrap: wrap; max-width: 300px;"></div>
                                 </div>
@@ -1875,6 +1876,7 @@
                 } else if (block.type === 'book') {
                     const bookProps = parseBlockProps(block.props);
                     renderBookScrollPages(block.id, bookProps);
+                    updateBookDelta(block.id, bookProps);
                 } else if (block.type === 'speak') {
                     // speak型の場合もtextareaの自動リサイズ
                     const speakTextarea = div.querySelector('.block-textarea');
@@ -2039,6 +2041,9 @@
             if (field === 'currentPage') {
                 renderBookScrollPages(blockId, props);
             }
+            if (field === 'currentPage' || field === 'title') {
+                updateBookDelta(blockId, props);
+            }
             
             debouncedSave(`book-${blockId}`, async () => {
                 await fetch(`/api/blocks/${blockId}`, {
@@ -2080,6 +2085,46 @@
                     updateBookData(blockId, 'currentPage', i);
                 };
                 container.appendChild(btn);
+            }
+        }
+
+        async function updateBookDelta(blockId, props) {
+            const deltaEl = document.getElementById(`book-delta-${blockId}`);
+            if (!deltaEl) return;
+
+            const title = (props?.title || '').trim();
+            const currentPage = parseInt(props?.currentPage) || 0;
+
+            if (!title || !currentPage || !currentPageId) {
+                deltaEl.textContent = '今日: -';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/books/reading-delta', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        current_page_id: currentPageId,
+                        title,
+                        current_page: currentPage
+                    })
+                });
+
+                if (!res.ok) {
+                    deltaEl.textContent = '今日: -';
+                    return;
+                }
+
+                const data = await res.json();
+                if (data?.delta === null || data?.delta === undefined) {
+                    deltaEl.textContent = '今日: -';
+                    return;
+                }
+                const sign = data.delta > 0 ? '+' : '';
+                deltaEl.textContent = `今日: ${sign}${data.delta}頁`;
+            } catch (e) {
+                deltaEl.textContent = '今日: -';
             }
         }
 

@@ -4,6 +4,7 @@ Flask アプリケーション - APIルート定義
 """
 
 from flask import request, jsonify, send_file
+import re
 from datetime import datetime, timedelta
 import os
 import io
@@ -687,6 +688,92 @@ def register_routes(app):
             lines = str(raw_lines).splitlines()
         result = estimate_calories(lines)
         return jsonify(result)
+
+    @app.route('/api/books/reading-delta', methods=['POST'])
+    def reading_delta():
+        """前日との差分読書ページ数を取得"""
+        data = request.json or {}
+        current_page_id = data.get('current_page_id')
+        title = (data.get('title') or '').strip()
+        current_page = data.get('current_page')
+
+        if not current_page_id or not title:
+            return jsonify({'prev_page': None, 'delta': None})
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT id, title, parent_id FROM pages WHERE id = ?', (current_page_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'prev_page': None, 'delta': None})
+
+        page = dict(row)
+        date_title = page.get('title') or ''
+        date_page_id = page['id']
+
+        if not re.match(r'\d{4}年\d{1,2}月\d{1,2}日', date_title):
+            if page.get('parent_id'):
+                cursor.execute('SELECT id, title FROM pages WHERE id = ?', (page['parent_id'],))
+                parent = cursor.fetchone()
+                if parent:
+                    date_page_id = parent['id']
+                    date_title = parent['title'] or ''
+
+        match = re.match(r'(\d{4})年(\d{1,2})月(\d{1,2})日', date_title)
+        if not match:
+            conn.close()
+            return jsonify({'prev_page': None, 'delta': None})
+
+        year, month, day = map(int, match.groups())
+        prev_date = datetime(year, month, day) - timedelta(days=1)
+        prev_title = f"{prev_date.year}年{prev_date.month}月{prev_date.day}日"
+
+        cursor.execute('SELECT id FROM pages WHERE title = ? AND is_deleted = 0 LIMIT 1', (prev_title,))
+        prev_date_row = cursor.fetchone()
+        if not prev_date_row:
+            conn.close()
+            return jsonify({'prev_page': None, 'delta': None})
+
+        target_page_id = prev_date_row['id']
+        if page.get('parent_id') and page.get('parent_id') != target_page_id:
+            cursor.execute(
+                'SELECT id FROM pages WHERE parent_id = ? AND title = ? AND is_deleted = 0 ORDER BY position LIMIT 1',
+                (target_page_id, page.get('title'))
+            )
+            child = cursor.fetchone()
+            if not child:
+                conn.close()
+                return jsonify({'prev_page': None, 'delta': None})
+            target_page_id = child['id']
+
+        cursor.execute(
+            'SELECT props FROM blocks WHERE page_id = ? AND type = ? AND props IS NOT NULL',
+            (target_page_id, 'book')
+        )
+        prev_value = None
+        for block_row in cursor.fetchall():
+            try:
+                props = json.loads(block_row['props'] or '{}')
+            except Exception:
+                props = {}
+            if (props.get('title') or '').strip() == title:
+                prev_value = props.get('currentPage')
+                break
+
+        conn.close()
+        if prev_value is None:
+            return jsonify({'prev_page': None, 'delta': None})
+
+        delta = None
+        if current_page is not None:
+            try:
+                delta = int(current_page) - int(prev_value)
+            except Exception:
+                delta = None
+
+        return jsonify({'prev_page': prev_value, 'delta': delta})
 
     @app.route('/api/upload', methods=['POST'])
     def upload_file():
