@@ -1099,6 +1099,11 @@ def register_routes(app):
 
     @app.route('/webhook_deploy', methods=['POST'])
     def webhook_deploy():
+        deploy_token = os.getenv('DEPLOY_WEBHOOK_TOKEN', '')
+        provided = request.args.get('token') or request.headers.get('X-Deploy-Token') or ''
+        if not deploy_token or provided != deploy_token:
+            return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+
         subprocess.run(['git', 'fetch', '--all'], cwd='/home/nnnkeita/mysite')
         subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd='/home/nnnkeita/mysite')
         subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'])

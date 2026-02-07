@@ -18,7 +18,11 @@ git push
 
 # 3. PythonAnywhereの更新トリガーを引く
 echo "🔄 サーバーを更新中..."
-curl -X POST https://nnnkeita.pythonanywhere.com/webhook_deploy
+if [ -z "$DEPLOY_WEBHOOK_TOKEN" ]; then
+    echo "⚠️ DEPLOY_WEBHOOK_TOKEN is not set. Set it in your environment."
+    exit 1
+fi
+curl -X POST "https://nnnkeita.pythonanywhere.com/webhook_deploy?token=${DEPLOY_WEBHOOK_TOKEN}"
 
 echo ""
 echo "✅ 更新完了！"
