@@ -1212,8 +1212,18 @@
                     alert('過去の日記が見つかりませんでした。');
                     return;
                 }
+                const pageMap = new Map(allPages.map(page => [page.id, page]));
+                const moveTargets = targets.filter(id => pageMap.get(id)?.parent_id !== target.id);
+                if (moveTargets.length === 0) {
+                    collapsedFolders.delete(target.id);
+                    localStorage.setItem('collapsedFolders', JSON.stringify(Array.from(collapsedFolders)));
+                    fetchPages();
+                    loadPage(target.id);
+                    alert('選択した項目はすでに過去の日記にあります。');
+                    return;
+                }
                 let nextPos = computeTailPosition(target.id);
-                for (const id of targets) {
+                for (const id of moveTargets) {
                     if (id === target.id) continue;
                     if (isDescendant(target.id, id)) continue;
                     await fetch(`/api/pages/${id}`, {
@@ -1223,6 +1233,8 @@
                     });
                     nextPos += 1000.0;
                 }
+                collapsedFolders.delete(target.id);
+                localStorage.setItem('collapsedFolders', JSON.stringify(Array.from(collapsedFolders)));
                 selectedPageIds.clear();
                 fetchPages();
                 loadPage(target.id);
