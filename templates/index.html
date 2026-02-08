@@ -520,6 +520,7 @@
     <div id="context-menu">
         <div class="menu-item" onclick="contextAction('copy')">📋 コピー</div>
         <div class="menu-item" onclick="contextAction('paste')" id="paste-menu-item">📄 貼り付け</div>
+        <div class="menu-item" onclick="contextAction('move_to_folder')">📁 フォルダへ移動</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('move_to_trash')">ゴミ箱に移動</div>
         <div class="menu-item" onclick="contextAction('rename')">名前を変更</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">サブページ作成</div>
@@ -1176,6 +1177,26 @@
                 const newPage = await copyRes.json();
                 fetchPages();
                 loadPage(newPage.id);
+            } else if (action === 'move_to_folder') {
+                const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : [contextTargetId];
+                const targetFolder = await promptMoveTargetFolder();
+                if (!targetFolder) return;
+                const targetParentId = targetFolder.id;
+                let nextPos = computeTailPosition(targetParentId);
+                for (const id of targets) {
+                    if (id === targetParentId) continue;
+                    if (targetParentId && isDescendant(targetParentId, id)) {
+                        continue;
+                    }
+                    await fetch(`/api/pages/${id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ parent_id: targetParentId, position: nextPos })
+                    });
+                    nextPos += 1000.0;
+                }
+                selectedPageIds.clear();
+                fetchPages();
             } else if (action === 'move_to_trash') {
                 const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : [contextTargetId];
                 if(confirm(`${targets.length}件をゴミ箱に移動しますか？`)) {
