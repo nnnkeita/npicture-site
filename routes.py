@@ -1225,7 +1225,11 @@ def register_routes(app):
             cursor.execute(f'UPDATE blocks SET {", ".join(updates)} WHERE id = ?', values)
             conn.commit()
         cursor.execute('SELECT * FROM blocks WHERE id = ?', (block_id,))
-        block = dict(cursor.fetchone())
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Block not found'}), 404
+        block = dict(row)
         conn.close()
         
         import time
