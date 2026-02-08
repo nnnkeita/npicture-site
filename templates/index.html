@@ -1900,6 +1900,23 @@
                             <textarea class="w-full border border-purple-100 focus:ring-0 bg-transparent block-textarea rounded p-2" placeholder="読み上げたいテキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>
                         </div>
                     `;
+                } else if (block.type === 'text') {
+                    const escapedContent = (block.content || '').replace(/"/g, '&quot;');
+                    const props = parseBlockProps(block.props);
+                    const resolvedAt = props && props.resolved_at ? String(props.resolved_at) : '';
+                    const isInbox = window.INBOX_ID !== null && currentPageId === window.INBOX_ID;
+                    const isResolved = Boolean(resolvedAt);
+                    if (isInbox) {
+                        const checkedAttr = isResolved ? 'checked' : '';
+                        const disabledAttr = isResolved ? 'disabled' : '';
+                        const resolvedClass = isResolved ? 'line-through text-gray-400' : '';
+                        contentHtml = `
+                            <input type="checkbox" ${checkedAttr} ${disabledAttr} onchange="handleInboxTextResolve(${block.id}, this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
+                            <textarea class="flex-1 ${resolvedClass} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>
+                        `;
+                    } else {
+                        contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
+                    }
                 } else {
                     const escapedContent = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
@@ -2077,7 +2094,18 @@
             }
         }
 
+        function handleInboxTextResolve(blockId, checked) {
+            if (!checked) return;
+            const block = (currentBlocks || []).find(b => b.id === blockId);
+            const props = parseBlockProps(block?.props) || {};
+            if (props.resolved_at) return;
+            resolveInboxItem(blockId);
+        }
+
         async function resolveInboxItem(blockId) {
+            const target = (currentBlocks || []).find(b => b.id === blockId);
+            const targetProps = parseBlockProps(target?.props) || {};
+            if (targetProps.resolved_at) return;
             const note = prompt('解決メモ（任意）') || '';
             try {
                 const res = await fetch('/api/inbox/resolve', {
@@ -2088,6 +2116,13 @@
                 const data = await res.json();
                 if (!res.ok) {
                     alert(data.error || '保存に失敗しました');
+                    return;
+                }
+                if (target) {
+                    const nextProps = { ...targetProps, resolved_at: new Date().toISOString().slice(0, 10) };
+                    if (note) nextProps.resolution_note = note;
+                    target.props = JSON.stringify(nextProps);
+                    renderBlocks(currentBlocks);
                 }
             } catch (e) {
                 alert('保存に失敗しました');
