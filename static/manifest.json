@@ -1,6 +1,6 @@
 {
-  "name": "プライベート日記",
-  "short_name": "日記",
+  "name": "Kiroku Journal",
+  "short_name": "Kiroku",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f0fdf4",

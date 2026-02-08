@@ -1,5 +1,5 @@
 // Service Worker for PWA
-const CACHE_NAME = 'diary-pwa-v1';
+const CACHE_NAME = 'kiroku-journal-v2';
 const urlsToCache = [
   '/',
   '/static/manifest.json'
