@@ -1077,9 +1077,14 @@ def register_routes(app):
                 raw = resp.read().decode('utf-8')
             token_data = _parse_healthplanet_token_response(raw)
         except urllib.error.HTTPError as e:
-            return f'トークン取得に失敗しました: {e.code}', 502
-        except Exception:
-            return 'トークン取得に失敗しました。', 502
+            try:
+                body = e.read().decode('utf-8')
+            except Exception:
+                body = ''
+            detail = f'{e.code} {body}'.strip()
+            return f'トークン取得に失敗しました: {detail}', 502
+        except Exception as e:
+            return f'トークン取得に失敗しました。{type(e).__name__}', 502
 
         access_token = token_data.get('access_token')
         refresh_token = token_data.get('refresh_token')
