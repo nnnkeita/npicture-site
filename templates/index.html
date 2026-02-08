@@ -1908,11 +1908,10 @@
                     const isResolved = Boolean(resolvedAt);
                     if (isInbox) {
                         const checkedAttr = isResolved ? 'checked' : '';
-                        const disabledAttr = isResolved ? 'disabled' : '';
                         const resolvedClass = isResolved ? 'line-through text-gray-400' : '';
                         contentHtml = `
-                            <input type="checkbox" ${checkedAttr} ${disabledAttr} onchange="handleInboxTextResolve(${block.id}, this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
-                            <textarea class="flex-1 ${resolvedClass} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>
+                            <input type="checkbox" ${checkedAttr} onchange="handleInboxTextResolve(${block.id}, this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
+                            <textarea class="flex-1 ${resolvedClass} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)" onkeydown="handleInboxTextKeydown(event, ${block.id})">${escapedContent}</textarea>
                         `;
                     } else {
                         contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
@@ -2088,18 +2087,31 @@
 
         function handleTodoToggle(blockId, checked) {
             updateBlock(blockId, 'checked', checked);
-            if (!checked) return;
             if (window.INBOX_ID !== null && currentPageId === window.INBOX_ID) {
-                resolveInboxItem(blockId);
+                if (checked) {
+                    resolveInboxItem(blockId);
+                } else {
+                    unresolveInboxItem(blockId);
+                }
             }
         }
 
         function handleInboxTextResolve(blockId, checked) {
-            if (!checked) return;
             const block = (currentBlocks || []).find(b => b.id === blockId);
             const props = parseBlockProps(block?.props) || {};
-            if (props.resolved_at) return;
-            resolveInboxItem(blockId);
+            if (checked) {
+                if (props.resolved_at) return;
+                resolveInboxItem(blockId);
+            } else {
+                if (!props.resolved_at) return;
+                unresolveInboxItem(blockId);
+            }
+        }
+
+        function handleInboxTextKeydown(event, blockId) {
+            if (event.key !== 'Enter' || event.shiftKey) return;
+            event.preventDefault();
+            addBlockAfter(blockId, 'text');
         }
 
         async function resolveInboxItem(blockId) {
@@ -2126,6 +2138,32 @@
                 }
             } catch (e) {
                 alert('保存に失敗しました');
+            }
+        }
+
+        async function unresolveInboxItem(blockId) {
+            try {
+                const res = await fetch('/api/inbox/unresolve', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ block_id: blockId })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || '取り消しに失敗しました');
+                    return;
+                }
+                const target = (currentBlocks || []).find(b => b.id === blockId);
+                if (target) {
+                    const props = parseBlockProps(target.props) || {};
+                    delete props.resolved_at;
+                    delete props.knowledge_block_id;
+                    delete props.resolution_note;
+                    target.props = JSON.stringify(props);
+                    renderBlocks(currentBlocks);
+                }
+            } catch (e) {
+                alert('取り消しに失敗しました');
             }
         }
         async function deleteBlock(id) {

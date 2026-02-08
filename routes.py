@@ -250,6 +250,54 @@ def register_routes(app):
 
         return jsonify({'success': True, 'knowledge_block_id': knowledge_block_id}), 200
 
+    @app.route('/api/inbox/unresolve', methods=['POST'])
+    def unresolve_inbox_item():
+        """誤チェック時に知識の宝庫から戻す"""
+        data = request.json or {}
+        block_id = data.get('block_id')
+        if not block_id:
+            return jsonify({'error': 'block_id is required'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT b.*, p.title AS page_title
+            FROM blocks b
+            JOIN pages p ON b.page_id = p.id
+            WHERE b.id = ?
+        ''', (block_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Block not found'}), 404
+
+        page_title = row['page_title'] or ''
+        if page_title != '🔖 あとで調べる':
+            conn.close()
+            return jsonify({'error': 'Only inbox items can be un-resolved'}), 400
+
+        raw_props = row['props'] or '{}'
+        try:
+            props = json.loads(raw_props) if isinstance(raw_props, str) else dict(raw_props)
+        except Exception:
+            props = {}
+
+        knowledge_block_id = props.get('knowledge_block_id')
+        if knowledge_block_id:
+            cursor.execute('DELETE FROM blocks WHERE id = ?', (knowledge_block_id,))
+
+        for key in ['resolved_at', 'knowledge_block_id', 'resolution_note']:
+            if key in props:
+                props.pop(key, None)
+
+        cursor.execute(
+            'UPDATE blocks SET props = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (json.dumps(props, ensure_ascii=False), row['id'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True}), 200
+
     @app.route('/api/finished', methods=['GET'])
     def get_finished():
         """'読了'ページを取得"""
