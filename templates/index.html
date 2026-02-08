@@ -1911,7 +1911,7 @@
                         const resolvedClass = isResolved ? 'line-through text-gray-400' : '';
                         contentHtml = `
                             <input type="checkbox" ${checkedAttr} onchange="handleInboxTextResolve(${block.id}, this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
-                            <textarea class="flex-1 ${resolvedClass} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)" onkeydown="handleInboxTextKeydown(event, ${block.id})">${escapedContent}</textarea>
+                            <input type="text" class="flex-1 ${resolvedClass} border-none focus:ring-0 bg-transparent cursor-text" placeholder="テキストを入力..." value="${escapedContent}" onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value)" onkeydown="handleInboxTextKeydown(event, ${block.id})">
                         `;
                     } else {
                         contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent block-textarea cursor-text" placeholder="テキストを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)">${escapedContent}</textarea>`;
