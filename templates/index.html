@@ -1150,7 +1150,7 @@
 
         async function contextAction(action) {
             hideContextMenu();
-            if (!contextTargetId && selectedPageIds.size === 0) return;
+            if (action !== 'open_past_diaries' && !contextTargetId && selectedPageIds.size === 0) return;
             
             if (action === 'copy') {
                 copiedPageId = contextTargetId;
@@ -1202,7 +1202,7 @@
                 const res = await fetch('/api/pages');
                 const rootPages = await res.json();
                 const allPages = flattenPages(rootPages, []);
-                const target = allPages.find(page => (page.title || '') === '過去の日記');
+                const target = allPages.find(page => (page.title || '').includes('過去の日記'));
                 if (!target) {
                     alert('過去の日記が見つかりませんでした。');
                     return;
