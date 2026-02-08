@@ -2118,7 +2118,7 @@
             const target = (currentBlocks || []).find(b => b.id === blockId);
             const targetProps = parseBlockProps(target?.props) || {};
             if (targetProps.resolved_at) return;
-            const note = prompt('解決メモ（任意）') || '';
+            const note = '';
             try {
                 const res = await fetch('/api/inbox/resolve', {
                     method: 'POST',
