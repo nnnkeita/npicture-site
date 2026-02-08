@@ -2111,6 +2111,12 @@
         function handleInboxTextKeydown(event, blockId) {
             if (event.key !== 'Enter' || event.shiftKey) return;
             event.preventDefault();
+            const value = event.target.value || '';
+            const block = (currentBlocks || []).find(b => b.id === blockId);
+            if (block) {
+                block.content = value;
+                updateBlock(blockId, 'content', value);
+            }
             addBlockAfter(blockId, 'text');
         }
 
