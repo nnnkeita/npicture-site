@@ -613,6 +613,7 @@
         let pageHierarchy = new Map(); // 子孫チェック用の簡易ツリー
         let copiedPageId = null; // コピーしたページID
         let undoStack = []; // 元に戻す履歴
+        let redoStack = []; // やり直し履歴
         const MAX_UNDO = 50; // 最大履歴数
         
         // 保存リクエストのキュー管理（パフォーマンス改善）
@@ -688,11 +689,20 @@
                 openTodayPage();
             }
             
-            // Ctrl+Z (Cmd+Z) で元に戻す
+            // Ctrl/Cmd + Z/Y で元に戻す/やり直す
             document.addEventListener('keydown', (e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-                    e.preventDefault();
-                    performUndo();
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.key === 'z') {
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            performRedo();
+                        } else {
+                            performUndo();
+                        }
+                    } else if (e.key === 'y') {
+                        e.preventDefault();
+                        performRedo();
+                    }
                 }
             });
         });
@@ -2618,6 +2628,7 @@
             if (undoStack.length > MAX_UNDO) {
                 undoStack.shift();
             }
+            redoStack = [];
         }
 
         async function performUndo() {
@@ -2628,6 +2639,7 @@
             
             const lastAction = undoStack.pop();
             const { actionType, data } = lastAction;
+            let handled = false;
             
             try {
                 if (actionType === 'delete') {
@@ -2636,6 +2648,7 @@
                     }
                     await fetchPages();
                     console.log('削除を元に戻しました');
+                    handled = true;
                 } else if (actionType === 'rename') {
                     await fetch(`/api/pages/${data.pageId}`, {
                         method: 'PUT',
@@ -2647,6 +2660,7 @@
                         document.getElementById('page-title').value = data.oldTitle;
                     }
                     console.log('名前変更を元に戻しました');
+                    handled = true;
                 } else if (actionType === 'icon') {
                     await fetch(`/api/pages/${data.pageId}`, {
                         method: 'PUT',
@@ -2658,10 +2672,71 @@
                         document.getElementById('page-icon').innerText = data.oldIcon;
                     }
                     console.log('アイコン変更を元に戻しました');
+                    handled = true;
+                } else {
+                    console.log('元に戻せない操作です:', actionType);
+                }
+                if (handled) {
+                    redoStack.push(lastAction);
                 }
             } catch (e) {
                 console.error('元に戻す操作に失敗しました:', e);
                 alert('元に戻す操作に失敗しました');
+            }
+        }
+
+        async function performRedo() {
+            if (redoStack.length === 0) {
+                console.log('やり直す操作がありません');
+                return;
+            }
+
+            const lastAction = redoStack.pop();
+            const { actionType, data } = lastAction;
+            let handled = false;
+
+            try {
+                if (actionType === 'delete') {
+                    for (const pageId of data.pageIds) {
+                        await fetch(`/api/pages/${pageId}/move-to-trash`, { method: 'POST' });
+                    }
+                    await fetchPages();
+                    console.log('削除をやり直しました');
+                    handled = true;
+                } else if (actionType === 'rename') {
+                    await fetch(`/api/pages/${data.pageId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ title: data.newTitle })
+                    });
+                    await fetchPages();
+                    if (currentPageId === data.pageId) {
+                        document.getElementById('page-title').value = data.newTitle;
+                    }
+                    console.log('名前変更をやり直しました');
+                    handled = true;
+                } else if (actionType === 'icon') {
+                    await fetch(`/api/pages/${data.pageId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ icon: data.newIcon })
+                    });
+                    await fetchPages();
+                    if (currentPageId === data.pageId) {
+                        document.getElementById('page-icon').innerText = data.newIcon;
+                    }
+                    console.log('アイコン変更をやり直しました');
+                    handled = true;
+                } else {
+                    console.log('やり直せない操作です:', actionType);
+                }
+
+                if (handled) {
+                    undoStack.push(lastAction);
+                }
+            } catch (e) {
+                console.error('やり直し操作に失敗しました:', e);
+                alert('やり直し操作に失敗しました');
             }
         }
 
