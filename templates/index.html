@@ -521,6 +521,7 @@
         <div class="menu-item" onclick="contextAction('copy')">📋 コピー</div>
         <div class="menu-item" onclick="contextAction('paste')" id="paste-menu-item">📄 貼り付け</div>
         <div class="menu-item" onclick="contextAction('move_to_folder')">📁 フォルダへ移動</div>
+        <div class="menu-item" onclick="contextAction('open_past_diaries')">🗓️ 過去の日記へ移動</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('move_to_trash')">ゴミ箱に移動</div>
         <div class="menu-item" onclick="contextAction('rename')">名前を変更</div>
         <div class="menu-item border-t border-gray-100" onclick="contextAction('new_sub')">サブページ作成</div>
@@ -1197,6 +1198,19 @@
                 }
                 selectedPageIds.clear();
                 fetchPages();
+            } else if (action === 'open_past_diaries') {
+                const res = await fetch('/api/pages');
+                const rootPages = await res.json();
+                const allPages = flattenPages(rootPages, []);
+                const target = allPages.find(page => (page.title || '') === '過去の日記');
+                if (!target) {
+                    alert('過去の日記が見つかりませんでした。');
+                    return;
+                }
+                selectedPageIds = new Set([target.id]);
+                lastSelectedId = target.id;
+                fetchPages();
+                loadPage(target.id);
             } else if (action === 'move_to_trash') {
                 const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : [contextTargetId];
                 if(confirm(`${targets.length}件をゴミ箱に移動しますか？`)) {
