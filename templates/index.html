@@ -1199,6 +1199,11 @@
                 selectedPageIds.clear();
                 fetchPages();
             } else if (action === 'open_past_diaries') {
+                const targets = selectedPageIds.size > 0 ? Array.from(selectedPageIds) : (contextTargetId ? [contextTargetId] : []);
+                if (targets.length === 0) {
+                    alert('移動する項目を選択してください。');
+                    return;
+                }
                 const res = await fetch('/api/pages');
                 const rootPages = await res.json();
                 const allPages = flattenPages(rootPages, []);
@@ -1207,8 +1212,18 @@
                     alert('過去の日記が見つかりませんでした。');
                     return;
                 }
-                selectedPageIds = new Set([target.id]);
-                lastSelectedId = target.id;
+                let nextPos = computeTailPosition(target.id);
+                for (const id of targets) {
+                    if (id === target.id) continue;
+                    if (isDescendant(target.id, id)) continue;
+                    await fetch(`/api/pages/${id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ parent_id: target.id, position: nextPos })
+                    });
+                    nextPos += 1000.0;
+                }
+                selectedPageIds.clear();
                 fetchPages();
                 loadPage(target.id);
             } else if (action === 'move_to_trash') {
