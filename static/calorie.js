@@ -32,6 +32,10 @@
         if (legacyDiv) {
             legacyDiv.innerHTML = `合計: ${r.total_kcal ?? '-'} kcal`;
         }
+
+        if (typeof window.updateDailyCalorieTotal === 'function') {
+            window.updateDailyCalorieTotal();
+        }
     }
 
     // カロリー入力処理

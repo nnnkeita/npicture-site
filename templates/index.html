@@ -423,6 +423,9 @@
                 </div>
                 
                 <input type="text" id="page-title" class="text-4xl font-bold w-full border-none focus:ring-0 placeholder-gray-300 mb-4 bg-transparent cursor-text" placeholder="無題" oninput="saveTitle()" onkeydown="handleTitleEnter(event)">
+                <div id="daily-calorie-total" class="hidden text-sm text-green-700 bg-green-50 border border-green-200 rounded-full inline-flex items-center px-3 py-1 mb-6">
+                    1日の合計: -
+                </div>
                 
                 <!-- カテゴリーページのタブ -->
                 <div id="category-tabs" class="hidden mb-6 flex gap-2 border-b border-gray-200">
@@ -659,6 +662,7 @@
         let currentCategoryTitle = null;
         let focusedBlockId = null;
         let isKnowledgePage = false;
+        let isFoodPage = false;
         let siblingsByParent = new Map(); // 親ごとの並び順を保持
         let pageHierarchy = new Map(); // 子孫チェック用の簡易ツリー
         let copiedPageId = null; // コピーしたページID
@@ -1565,6 +1569,11 @@
             } else {
                 editorContainer.classList.remove('knowledge-mode');
             }
+            isFoodPage = page.title === '食事';
+            const dailyTotalEl = document.getElementById('daily-calorie-total');
+            if (dailyTotalEl) {
+                dailyTotalEl.classList.toggle('hidden', !isFoodPage);
+            }
             
             // 親ページの表示
             const breadcrumb = document.getElementById('parent-breadcrumb');
@@ -2036,6 +2045,8 @@
                 }
             });
 
+            updateDailyCalorieTotal();
+
             if(sortableInstance) sortableInstance.destroy();
             sortableInstance = new Sortable(container, {
                 handle: '.drag-handle',
@@ -2048,6 +2059,20 @@
                     });
                 }
             });
+        }
+
+        function updateDailyCalorieTotal() {
+            if (!isFoodPage) return;
+            const total = (currentBlocks || []).reduce((sum, block) => {
+                if (block.type !== 'calorie') return sum;
+                const props = parseBlockProps(block.props) || {};
+                const val = parseFloat(props.total_kcal);
+                return sum + (Number.isFinite(val) ? val : 0);
+            }, 0);
+            const dailyTotalEl = document.getElementById('daily-calorie-total');
+            if (!dailyTotalEl) return;
+            const rounded = Math.round(total * 10) / 10;
+            dailyTotalEl.textContent = `1日の合計: ${total ? rounded : 0} kcal`;
         }
 
         async function createPageIn(parentId) {
