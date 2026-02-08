@@ -3,7 +3,7 @@ Flask アプリケーション - APIルート定義
 ページ、ブロック、テンプレート、インポート/エクスポート機能など
 """
 
-from flask import request, jsonify, send_file
+from flask import request, jsonify, send_file, redirect
 import re
 from datetime import datetime, timedelta
 import os
@@ -15,16 +15,18 @@ import sqlite3
 import subprocess
 import urllib.request
 import urllib.error
+import urllib.parse
 from werkzeug.utils import secure_filename
 
 from database import (
-    get_db, get_next_position, get_block_next_position, 
-    mark_tree_deleted, hard_delete_tree
+    get_db, get_next_position, get_block_next_position,
+    mark_tree_deleted, hard_delete_tree,
+    save_healthplanet_token, get_healthplanet_token, clear_healthplanet_token
 )
 from utils import (
-    allowed_file, estimate_calories, export_page_to_dict, 
-    page_to_markdown, create_page_from_dict, copy_page_tree, 
-    backup_database_to_json
+    allowed_file, estimate_calories, export_page_to_dict,
+    page_to_markdown, create_page_from_dict, copy_page_tree,
+    backup_database_to_json, get_or_create_date_page
 )
 
 DATABASE = 'notion.db'
@@ -34,6 +36,131 @@ BACKUP_FOLDER = 'backups'
 
 def register_routes(app):
     """全APIルートをアプリに登録"""
+
+    def _get_healthplanet_config():
+        client_id = os.getenv('HEALTHPLANET_CLIENT_ID', '')
+        client_secret = os.getenv('HEALTHPLANET_CLIENT_SECRET', '')
+        redirect_uri = os.getenv('HEALTHPLANET_REDIRECT_URI', '')
+        if not redirect_uri:
+            base_url = os.getenv('APP_BASE_URL', 'http://127.0.0.1:5000')
+            redirect_uri = f"{base_url}/api/healthplanet/callback"
+        scope = os.getenv('HEALTHPLANET_SCOPE', 'innerscan')
+        return client_id, client_secret, redirect_uri, scope
+
+    def _parse_healthplanet_token_response(raw_text):
+        try:
+            return json.loads(raw_text)
+        except Exception:
+            parsed = urllib.parse.parse_qs(raw_text)
+            return {k: v[0] for k, v in parsed.items()}
+
+    def _fetch_healthplanet_innerscan(access_token, from_str, to_str, tags):
+        params = {
+            'access_token': access_token,
+            'date': '1',
+            'from': from_str,
+            'to': to_str,
+            'tag': ','.join(tags)
+        }
+        url = 'https://www.healthplanet.jp/status/innerscan.json?' + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    def _format_healthplanet_line(measurements):
+        parts = []
+        weight = measurements.get('6021')
+        fat = measurements.get('6022')
+        body_age = measurements.get('6028')
+        if weight:
+            parts.append(f"体重 {weight}kg")
+        if fat:
+            parts.append(f"体脂肪 {fat}%")
+        if body_age:
+            parts.append(f"体内年齢 {body_age}才")
+        return ' / '.join(parts)
+
+    def _upsert_healthplanet_block(cursor, page_id, content):
+        cursor.execute('SELECT id, position, props FROM blocks WHERE page_id = ? ORDER BY position ASC', (page_id,))
+        rows = cursor.fetchall()
+        target_id = None
+        for row in rows:
+            props = row['props'] or '{}'
+            try:
+                props_json = json.loads(props) if isinstance(props, str) else props
+            except Exception:
+                props_json = {}
+            if props_json.get('source') == 'healthplanet':
+                target_id = row['id']
+                break
+
+        if target_id:
+            cursor.execute('UPDATE blocks SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (content, target_id))
+            return
+
+        if rows:
+            min_pos = min(row['position'] for row in rows)
+            new_pos = min_pos - 1000.0
+        else:
+            new_pos = 1000.0
+
+        props = json.dumps({'source': 'healthplanet', 'type': 'body'})
+        cursor.execute(
+            "INSERT INTO blocks (page_id, type, content, position, props) VALUES (?, 'text', ?, ?, ?)",
+            (page_id, content, new_pos, props)
+        )
+
+    def sync_healthplanet_today():
+        token_row = get_healthplanet_token()
+        if not token_row:
+            return False, 'HealthPlanetが未連携です。'
+
+        access_token = token_row['access_token']
+        expires_at = token_row['expires_at']
+        if expires_at:
+            try:
+                if datetime.fromisoformat(expires_at) < datetime.utcnow():
+                    return False, 'トークン期限切れです。再連携してください。'
+            except Exception:
+                pass
+
+        jst_now = datetime.utcnow() + timedelta(hours=9)
+        start = jst_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        from_str = start.strftime('%Y%m%d%H%M%S')
+        to_str = jst_now.strftime('%Y%m%d%H%M%S')
+        date_str = jst_now.strftime('%Y-%m-%d')
+
+        try:
+            data = _fetch_healthplanet_innerscan(access_token, from_str, to_str, ['6021', '6022', '6028'])
+        except Exception:
+            return False, 'HealthPlanetの取得に失敗しました。'
+
+        measurements = {}
+        for entry in data.get('data', []) if isinstance(data, dict) else []:
+            tag = str(entry.get('tag', ''))
+            keydata = str(entry.get('keydata', '')).strip()
+            date_value = str(entry.get('date', '')).strip()
+            if not tag or not keydata:
+                continue
+            current = measurements.get(tag)
+            if not current or date_value > current.get('date', ''):
+                measurements[tag] = {'value': keydata, 'date': date_value}
+
+        latest_values = {k: v.get('value') for k, v in measurements.items()}
+        content = _format_healthplanet_line(latest_values)
+        if not content:
+            return False, '今日のデータが見つかりませんでした。'
+
+        conn = get_db()
+        cursor = conn.cursor()
+        page = get_or_create_date_page(cursor, date_str)
+        if not page:
+            conn.close()
+            return False, '日付ページの作成に失敗しました。'
+        _upsert_healthplanet_block(cursor, page['id'], content)
+        conn.commit()
+        conn.close()
+        return True, '同期しました。'
 
     @app.route('/api/inbox', methods=['GET'])
     def get_inbox():
@@ -278,164 +405,17 @@ def register_routes(app):
         """指定日付のページを作成（存在しない場合は前日をコピー）"""
         data = request.json
         date_str = data.get('date')
-        
-        try:
-            target_date = datetime.strptime(date_str, '%Y-%m-%d')
-            title = f"{target_date.year}年{target_date.month}月{target_date.day}日"
-        except Exception:
+
+        if not date_str:
             return jsonify({'error': 'Invalid date format'}), 400
-        
+
         conn = get_db()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM pages WHERE title = ? AND is_deleted = 0 LIMIT 1', (title,))
-        existing = cursor.fetchone()
-        if existing:
+        page = get_or_create_date_page(cursor, date_str)
+        if not page:
             conn.close()
-            return jsonify(dict(existing))
-        
-        prev_date = target_date - timedelta(days=1)
-        prev_title = f"{prev_date.year}年{prev_date.month}月{prev_date.day}日"
-        cursor.execute('SELECT id FROM pages WHERE title = ? AND is_deleted = 0 ORDER BY created_at DESC LIMIT 1', (prev_title,))
-        prev_row = cursor.fetchone()
-        
-        if prev_row:
-            previous_page_id = prev_row['id']
-            new_page_id = copy_page_tree(cursor, previous_page_id, new_title=title, new_parent_id=None, override_icon='📅')
-            conn.commit()
-            
-            cursor.execute('SELECT title FROM pages WHERE parent_id = ? AND is_deleted = 0', (new_page_id,))
-            existing_titles = {row['title'] for row in cursor.fetchall()}
-            
-            required_children = [
-                ('日記', '📝'),
-                ('筋トレ', '🏋️'),
-                ('英語学習', '🌍'),
-                ('食事', '🍽️'),
-                ('読書', '📚'),
-            ]
-
-            # 必須子ページの重複を整理（最初の1つだけ残す）
-            required_titles = {title_req for title_req, _ in required_children}
-            cursor.execute(
-                'SELECT id, title FROM pages WHERE parent_id = ? AND is_deleted = 0 ORDER BY position',
-                (new_page_id,)
-            )
-            seen_titles = set()
-            for row in cursor.fetchall():
-                title_value = row['title']
-                if title_value in required_titles:
-                    if title_value in seen_titles:
-                        mark_tree_deleted(cursor, row['id'], is_deleted=True)
-                    else:
-                        seen_titles.add(title_value)
-            
-            next_pos = get_next_position(cursor, new_page_id)
-            for title_req, icon_req in required_children:
-                if title_req not in existing_titles:
-                    cursor.execute(
-                        'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
-                        (title_req, icon_req, new_page_id, next_pos)
-                    )
-                    next_pos += 1000.0
-            
-            conn.commit()
-            cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
-            page = dict(cursor.fetchone())
-            conn.close()
-            return jsonify(page)
-        
-        new_pos = get_next_position(cursor, None)
-        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
-                       (title, '📅', None, new_pos))
-        page_id = cursor.lastrowid
-        
-        cursor.execute("INSERT INTO blocks (page_id, type, content, position, props) VALUES (?, 'text', '', ?, ?)", 
-                       (page_id, 1000.0, '{}'))
-        
-        children_templates = [
-            {
-                'title': '日記',
-                'icon': '📝',
-                'blocks': [
-                    {'type': 'h1', 'content': '体調'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': '天気'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': 'やったこと'},
-                    {'type': 'todo', 'content': ''},
-                    {'type': 'h1', 'content': '振り返り'},
-                    {'type': 'text', 'content': ''},
-                ]
-            },
-            {
-                'title': '筋トレ',
-                'icon': '🏋️',
-                'blocks': [
-                    {'type': 'h1', 'content': '今日のメニュー'},
-                    {'type': 'todo', 'content': ''},
-                    {'type': 'h1', 'content': 'セット・回数'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': 'メモ'},
-                    {'type': 'text', 'content': ''},
-                ]
-            },
-            {
-                'title': '英語学習',
-                'icon': '🌍',
-                'blocks': [
-                    {'type': 'h1', 'content': '今日の学習内容'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': '新しい単語'},
-                    {'type': 'todo', 'content': ''},
-                    {'type': 'h1', 'content': '発音練習'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': 'リスニング時間'},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': '気づいたこと'},
-                    {'type': 'text', 'content': ''},
-                ]
-            },
-            {
-                'title': '読書',
-                'icon': '📚',
-                'blocks': [
-                    {'type': 'book', 'content': ''},
-                    {'type': 'text', 'content': ''},
-                ]
-            },
-            {
-                'title': '食事',
-                'icon': '🍽️',
-                'blocks': [
-                    {'type': 'h1', 'content': '🌅 朝食'},
-                    {'type': 'todo', 'content': '', 'checked': 0},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': '🌞 昼食'},
-                    {'type': 'todo', 'content': '', 'checked': 0},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': '🌙 夕食'},
-                    {'type': 'todo', 'content': '', 'checked': 0},
-                    {'type': 'text', 'content': ''},
-                    {'type': 'h1', 'content': 'カロリー記録'},
-                    {'type': 'calorie', 'content': ''},
-                ]
-            }
-        ]
-        
-        for i, child in enumerate(children_templates):
-            cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
-                           (child['title'], child['icon'], page_id, (i + 1) * 1000.0))
-            child_id = cursor.lastrowid
-            for j, block in enumerate(child['blocks']):
-                cursor.execute(
-                    "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
-                    (child_id, block['type'], block.get('content', ''), block.get('checked', 0), (j + 1) * 1000.0, '{}')
-                )
-        
+            return jsonify({'error': 'Invalid date format'}), 400
         conn.commit()
-        cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
-        page = dict(cursor.fetchone())
         conn.close()
         return jsonify(page)
 
@@ -1054,6 +1034,74 @@ def register_routes(app):
             return jsonify({'error': 'OpenAI API request failed'}), 502
 
         return jsonify({'answer': answer})
+
+    @app.route('/api/healthplanet/auth', methods=['GET'])
+    def healthplanet_auth():
+        client_id, _, redirect_uri, scope = _get_healthplanet_config()
+        if not client_id or not redirect_uri:
+            return jsonify({'error': 'HEALTHPLANET_CLIENT_ID/REDIRECT_URI is not set'}), 400
+        params = {
+            'client_id': client_id,
+            'redirect_uri': redirect_uri,
+            'scope': scope,
+            'response_type': 'code'
+        }
+        url = 'https://www.healthplanet.jp/oauth/auth?' + urllib.parse.urlencode(params)
+        return redirect(url)
+
+    @app.route('/api/healthplanet/callback', methods=['GET'])
+    def healthplanet_callback():
+        code = request.args.get('code', '')
+        if not code:
+            return '認可に失敗しました。', 400
+
+        client_id, client_secret, redirect_uri, scope = _get_healthplanet_config()
+        if not client_id or not client_secret or not redirect_uri:
+            return '設定が不足しています。', 400
+
+        payload = urllib.parse.urlencode({
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': redirect_uri,
+            'code': code,
+            'grant_type': 'authorization_code'
+        }).encode('utf-8')
+
+        try:
+            req = urllib.request.Request(
+                'https://www.healthplanet.jp/oauth/token',
+                data=payload,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode('utf-8')
+            token_data = _parse_healthplanet_token_response(raw)
+        except urllib.error.HTTPError as e:
+            return f'トークン取得に失敗しました: {e.code}', 502
+        except Exception:
+            return 'トークン取得に失敗しました。', 502
+
+        access_token = token_data.get('access_token')
+        refresh_token = token_data.get('refresh_token')
+        expires_in = token_data.get('expires_in')
+        expires_at = None
+        if expires_in:
+            try:
+                expires_at = (datetime.utcnow() + timedelta(seconds=int(expires_in))).isoformat()
+            except Exception:
+                expires_at = None
+
+        if not access_token:
+            return 'トークンが取得できませんでした。', 502
+
+        save_healthplanet_token(access_token, refresh_token, expires_at, scope)
+        return 'HealthPlanetの連携が完了しました。'
+
+    @app.route('/api/healthplanet/sync', methods=['POST'])
+    def healthplanet_sync():
+        ok, message = sync_healthplanet_today()
+        status = 200 if ok else 400
+        return jsonify({'message': message}), status
 
     @app.route('/api/pages/<int:page_id>/blocks', methods=['POST'])
     def create_block(page_id):

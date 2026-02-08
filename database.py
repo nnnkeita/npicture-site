@@ -178,6 +178,19 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
     ''')
+
+    # HealthPlanetトークン
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS healthplanet_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        expires_at TIMESTAMP,
+        scope TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
     
     # デフォルトテンプレートを初期化
     try:
@@ -240,6 +253,36 @@ def init_db():
     except Exception as e:
         pass
     
+    conn.commit()
+    conn.close()
+
+def get_healthplanet_token() -> Optional[sqlite3.Row]:
+    """HealthPlanetのトークンを取得"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM healthplanet_tokens ORDER BY id DESC LIMIT 1')
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def save_healthplanet_token(access_token: str, refresh_token: Optional[str] = None,
+                            expires_at: Optional[str] = None, scope: Optional[str] = None) -> None:
+    """HealthPlanetのトークンを保存（最新1件のみ保持）"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM healthplanet_tokens')
+    cursor.execute(
+        'INSERT INTO healthplanet_tokens (access_token, refresh_token, expires_at, scope) VALUES (?, ?, ?, ?)',
+        (access_token, refresh_token, expires_at, scope)
+    )
+    conn.commit()
+    conn.close()
+
+def clear_healthplanet_token() -> None:
+    """HealthPlanetのトークンを削除"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM healthplanet_tokens')
     conn.commit()
     conn.close()
 

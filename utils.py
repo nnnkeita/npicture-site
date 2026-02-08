@@ -8,8 +8,8 @@
 import json
 import re
 import os
-from datetime import datetime
-from database import get_db, get_next_position, get_block_next_position
+from datetime import datetime, timedelta
+from database import get_db, get_next_position, get_block_next_position, mark_tree_deleted
 
 # パス設定
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -231,6 +231,160 @@ def create_page_from_dict(cursor, page_dict, parent_id=None, position=None):
         create_page_from_dict(cursor, child, parent_id=new_page_id, position=child_pos)
     
     return new_page_id
+
+def get_or_create_date_page(cursor, date_str):
+    """指定日付のページを取得または作成（存在しない場合は前日をコピー）"""
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d')
+        title = f"{target_date.year}年{target_date.month}月{target_date.day}日"
+    except Exception:
+        return None
+
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND is_deleted = 0 LIMIT 1', (title,))
+    existing = cursor.fetchone()
+    if existing:
+        return dict(existing)
+
+    prev_date = target_date - timedelta(days=1)
+    prev_title = f"{prev_date.year}年{prev_date.month}月{prev_date.day}日"
+    cursor.execute('SELECT id FROM pages WHERE title = ? AND is_deleted = 0 ORDER BY created_at DESC LIMIT 1', (prev_title,))
+    prev_row = cursor.fetchone()
+
+    if prev_row:
+        previous_page_id = prev_row['id']
+        new_page_id = copy_page_tree(cursor, previous_page_id, new_title=title, new_parent_id=None, override_icon='📅')
+
+        cursor.execute('SELECT title FROM pages WHERE parent_id = ? AND is_deleted = 0', (new_page_id,))
+        existing_titles = {row['title'] for row in cursor.fetchall()}
+
+        required_children = [
+            ('日記', '📝'),
+            ('筋トレ', '🏋️'),
+            ('英語学習', '🌍'),
+            ('食事', '🍽️'),
+            ('読書', '📚'),
+        ]
+
+        required_titles = {title_req for title_req, _ in required_children}
+        cursor.execute(
+            'SELECT id, title FROM pages WHERE parent_id = ? AND is_deleted = 0 ORDER BY position',
+            (new_page_id,)
+        )
+        seen_titles = set()
+        for row in cursor.fetchall():
+            title_value = row['title']
+            if title_value in required_titles:
+                if title_value in seen_titles:
+                    mark_tree_deleted(cursor, row['id'], is_deleted=True)
+                else:
+                    seen_titles.add(title_value)
+
+        next_pos = get_next_position(cursor, new_page_id)
+        for title_req, icon_req in required_children:
+            if title_req not in existing_titles:
+                cursor.execute(
+                    'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                    (title_req, icon_req, new_page_id, next_pos)
+                )
+                next_pos += 1000.0
+
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (new_page_id,))
+        page = dict(cursor.fetchone())
+        return page
+
+    new_pos = get_next_position(cursor, None)
+    cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                   (title, '📅', None, new_pos))
+    page_id = cursor.lastrowid
+
+    cursor.execute("INSERT INTO blocks (page_id, type, content, position, props) VALUES (?, 'text', '', ?, ?)",
+                   (page_id, 1000.0, '{}'))
+
+    children_templates = [
+        {
+            'title': '日記',
+            'icon': '📝',
+            'blocks': [
+                {'type': 'h1', 'content': '体調'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '天気'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'やったこと'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '振り返り'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '筋トレ',
+            'icon': '🏋️',
+            'blocks': [
+                {'type': 'h1', 'content': '今日のメニュー'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': 'セット・回数'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'メモ'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '英語学習',
+            'icon': '🌍',
+            'blocks': [
+                {'type': 'h1', 'content': '今日の学習内容'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '新しい単語'},
+                {'type': 'todo', 'content': ''},
+                {'type': 'h1', 'content': '発音練習'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': 'リスニング時間'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '気づいたこと'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '食事',
+            'icon': '🍽️',
+            'blocks': [
+                {'type': 'h1', 'content': '朝食'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '昼食'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '夕食'},
+                {'type': 'text', 'content': ''},
+            ]
+        },
+        {
+            'title': '読書',
+            'icon': '📚',
+            'blocks': [
+                {'type': 'h1', 'content': '本のタイトル'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '著者'},
+                {'type': 'text', 'content': ''},
+                {'type': 'h1', 'content': '感想・メモ'},
+                {'type': 'text', 'content': ''},
+            ]
+        }
+    ]
+
+    for i, child in enumerate(children_templates):
+        child_pos = (i + 1) * 1000.0
+        cursor.execute(
+            'INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+            (child['title'], child['icon'], page_id, child_pos)
+        )
+        child_id = cursor.lastrowid
+        for j, block in enumerate(child['blocks']):
+            cursor.execute(
+                "INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)",
+                (child_id, block['type'], block['content'], block.get('checked', 0), (j + 1) * 1000.0, '{}')
+            )
+
+    cursor.execute('SELECT * FROM pages WHERE id = ?', (page_id,))
+    page = dict(cursor.fetchone())
+    return page
 
 def copy_page_tree(cursor, source_page_id, new_title=None, new_parent_id=None, position=None, override_icon=None):
     """ページとブロックを再帰的にコピー"""
