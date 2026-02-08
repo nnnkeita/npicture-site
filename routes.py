@@ -24,7 +24,7 @@ from database import (
     save_healthplanet_token, get_healthplanet_token, clear_healthplanet_token
 )
 from utils import (
-    allowed_file, estimate_calories, export_page_to_dict,
+    allowed_file, estimate_calories, estimate_calories_items, export_page_to_dict,
     page_to_markdown, create_page_from_dict, copy_page_tree,
     backup_database_to_json, get_or_create_date_page
 )
@@ -1344,12 +1344,16 @@ def register_routes(app):
     def calc_calories():
         """メニュー文字列から概算カロリーを返す"""
         data = request.json or {}
-        raw_lines = data.get('lines', data.get('text', ''))
-        if isinstance(raw_lines, list):
-            lines = raw_lines
+        items = data.get('items')
+        if isinstance(items, list):
+            result = estimate_calories_items(items)
         else:
-            lines = str(raw_lines).splitlines()
-        result = estimate_calories(lines)
+            raw_lines = data.get('lines', data.get('text', ''))
+            if isinstance(raw_lines, list):
+                lines = raw_lines
+            else:
+                lines = str(raw_lines).splitlines()
+            result = estimate_calories(lines)
         return jsonify(result)
 
     @app.route('/api/books/reading-delta', methods=['POST'])

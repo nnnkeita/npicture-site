@@ -8,6 +8,8 @@
 import json
 import re
 import os
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta
 from database import get_db, get_next_position, get_block_next_position, mark_tree_deleted
 
@@ -39,6 +41,7 @@ CALORIE_TABLE = [
 ]
 
 DEFAULT_UNKNOWN_KCAL = 150
+SERPAPI_KEY = os.getenv('SERPAPI_KEY', '')
 
 def allowed_file(filename):
     """許可されたファイル拡張子かチェック"""
@@ -126,6 +129,148 @@ def estimate_calories(lines):
         'total_kcal': round(total_kcal, 1),
         'items': results,
         'note': '目安の計算です。食材や調理法で変動します。'
+    }
+
+def _normalize_unit(unit):
+    return (unit or '').strip()
+
+def _is_gram_unit(unit):
+    return unit in {'g', 'G', 'グラム', 'g数', 'gram'}
+
+def _is_ml_unit(unit):
+    return unit in {'ml', 'mL', 'ML', '㎖'}
+
+def _is_serving_unit(unit):
+    return unit in {'杯', '人前', '個', '枚', '食', '皿'}
+
+def _fetch_kcal_from_serpapi(query):
+    if not SERPAPI_KEY:
+        return None, None
+    params = {
+        'engine': 'google',
+        'q': query,
+        'hl': 'ja',
+        'api_key': SERPAPI_KEY
+    }
+    url = 'https://serpapi.com/search.json?' + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return None, None
+
+    candidates = []
+    answer_box = data.get('answer_box') or {}
+    for key in ['answer', 'snippet', 'snippet_highlighted_words']:
+        val = answer_box.get(key)
+        if isinstance(val, list):
+            candidates.extend([str(v) for v in val])
+        elif val:
+            candidates.append(str(val))
+
+    for item in data.get('organic_results', [])[:5]:
+        title = item.get('title') or ''
+        snippet = item.get('snippet') or ''
+        candidates.append(f"{title} {snippet}")
+
+    kcal_pattern = re.compile(r'(\d{2,4})\s*kcal', re.IGNORECASE)
+    for text in candidates:
+        match = kcal_pattern.search(text)
+        if match:
+            return float(match.group(1)), text
+    return None, None
+
+def estimate_calories_items(items):
+    """品名/量/単位の入力からカロリー推定（検索も併用）"""
+    results = []
+    total_kcal = 0.0
+
+    for item in items:
+        name = (item.get('name') or '').strip()
+        if not name:
+            continue
+        amount_raw = item.get('amount')
+        try:
+            amount = float(amount_raw) if amount_raw not in (None, '') else 1.0
+        except Exception:
+            amount = 1.0
+        unit = _normalize_unit(item.get('unit'))
+
+        matched_entry = None
+        for entry in CALORIE_TABLE:
+            if any(keyword in name for keyword in entry['keywords']):
+                matched_entry = entry
+                break
+
+        input_label = f"{name} {amount:g}{unit}" if unit else f"{name}"
+
+        if matched_entry:
+            kcal = matched_entry['kcal']
+            unit_label = matched_entry.get('unit', '1食')
+
+            if matched_entry.get('per_grams') and (_is_gram_unit(unit) or unit == ''):
+                grams = amount if _is_gram_unit(unit) else matched_entry['per_grams'] * amount
+                kcal_total = (grams / matched_entry['per_grams']) * matched_entry['kcal']
+                amount_label = f"{grams:.0f}g"
+            elif matched_entry.get('per_ml') and (_is_ml_unit(unit) or unit == ''):
+                ml = amount if _is_ml_unit(unit) else matched_entry['per_ml'] * amount
+                kcal_total = (ml / matched_entry['per_ml']) * matched_entry['kcal']
+                amount_label = f"{ml:.0f}ml"
+            else:
+                servings = amount if amount > 0 else 1.0
+                kcal_total = servings * kcal
+                amount_label = f"{servings:g}{unit or '食'}"
+
+            kcal_total = round(kcal_total, 1)
+            total_kcal += kcal_total
+            results.append({
+                'input': input_label,
+                'matched': matched_entry['label'],
+                'unit': unit_label,
+                'amount': amount_label,
+                'kcal': kcal_total,
+                'is_estimated': False,
+                'source': 'db'
+            })
+            continue
+
+        query = f"{name} {amount:g}{unit} kcal" if unit else f"{name} kcal"
+        kcal_from_web, source_text = _fetch_kcal_from_serpapi(query)
+        if kcal_from_web:
+            kcal_total = kcal_from_web
+            if amount > 1 and _is_serving_unit(unit):
+                kcal_total = kcal_from_web * amount
+            kcal_total = round(kcal_total, 1)
+            total_kcal += kcal_total
+            results.append({
+                'input': input_label,
+                'matched': name,
+                'unit': unit or 'web',
+                'amount': f"{amount:g}{unit}" if unit else '-',
+                'kcal': kcal_total,
+                'is_estimated': False,
+                'source': 'web',
+                'source_text': source_text
+            })
+            continue
+
+        fallback = _fallback_estimate(name)
+        kcal_total = round(fallback['kcal'], 1)
+        total_kcal += kcal_total
+        results.append({
+            'input': input_label,
+            'matched': fallback['label'],
+            'unit': '推定',
+            'amount': '- ',
+            'kcal': kcal_total,
+            'is_estimated': True,
+            'source': 'fallback'
+        })
+
+    return {
+        'total_kcal': round(total_kcal, 1),
+        'items': results,
+        'note': '目安の計算です。食材や調理法で変動します。検索結果は参考値です。'
     }
 
 def export_page_to_dict(cursor, page_id):
