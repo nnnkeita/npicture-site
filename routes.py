@@ -739,6 +739,21 @@ def register_routes(app):
                 seen.add(key)
                 results.append(row)
 
+        page_candidates = []
+        if len(results) < 5:
+            terms = [t for t in re.split(r'\s+', query) if t]
+            like_terms = terms if terms else [query]
+            for term in like_terms[:5]:
+                pattern = f"%{term}%"
+                cursor.execute('''
+                    SELECT id, title, icon, parent_id
+                    FROM pages
+                    WHERE is_deleted = 0 AND title LIKE ?
+                    ORDER BY updated_at DESC
+                    LIMIT 10
+                ''', (pattern,))
+                page_candidates.extend([dict(row) for row in cursor.fetchall()])
+
         for result in results:
             breadcrumb = []
             current_id = result.get('parent_id')
@@ -756,12 +771,22 @@ def register_routes(app):
                 else:
                     break
             result['breadcrumb'] = breadcrumb
-        conn.close()
 
         if not results:
+            conn.close()
             return jsonify({'answer': '見つかりませんでした。'}), 200
 
+        max_context_len = 12000
         context_lines = []
+
+        def _append_line(line):
+            current = '\n'.join(context_lines)
+            if len(current) + len(line) + 1 > max_context_len:
+                return False
+            context_lines.append(line)
+            return True
+
+        _append_line('検索候補:')
         for result in results:
             breadcrumb_text = ' / '.join([f"{b['icon']} {b['title']}" for b in result.get('breadcrumb', [])])
             page_title = result.get('page_title') or ''
@@ -773,14 +798,77 @@ def register_routes(app):
                 location = f"{breadcrumb_text} / {page_title}"
             else:
                 location = page_title
-            context_lines.append(f"- {location}: {snippet}")
+            if not _append_line(f"- {location}: {snippet}"):
+                break
 
-        context = '\n'.join(context_lines)[:12000]
+        page_ids = []
+        page_seen = set()
+        for result in results:
+            page_id = result.get('page_id')
+            if page_id and page_id not in page_seen:
+                page_seen.add(page_id)
+                page_ids.append(page_id)
+        for page in page_candidates:
+            page_id = page.get('id')
+            if page_id and page_id not in page_seen:
+                page_seen.add(page_id)
+                page_ids.append(page_id)
+
+        if page_ids:
+            _append_line('')
+            _append_line('関連ページ:')
+        for page_id in page_ids[:12]:
+            cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (page_id,))
+            page_row = cursor.fetchone()
+            if not page_row:
+                continue
+            page = dict(page_row)
+            breadcrumb = []
+            current_id = page.get('parent_id')
+            while current_id:
+                cursor.execute('SELECT id, title, icon, parent_id FROM pages WHERE id = ?', (current_id,))
+                parent_row = cursor.fetchone()
+                if parent_row:
+                    parent_dict = dict(parent_row)
+                    breadcrumb.insert(0, f"{parent_dict['icon']} {parent_dict['title']}")
+                    current_id = parent_dict['parent_id']
+                else:
+                    break
+            breadcrumb_text = ' / '.join(breadcrumb)
+            header = f"- {page.get('icon', '')} {page.get('title', '')}"
+            if breadcrumb_text:
+                header = f"{header} ({breadcrumb_text})"
+            if not _append_line(header):
+                break
+
+            cursor.execute('''
+                SELECT type, content, details
+                FROM blocks
+                WHERE page_id = ?
+                ORDER BY position
+                LIMIT 25
+            ''', (page_id,))
+            blocks = [dict(row) for row in cursor.fetchall()]
+            for block in blocks:
+                content = (block.get('content') or '').strip()
+                details = (block.get('details') or '').strip()
+                if not content and not details:
+                    continue
+                line = content if content else ''
+                if details:
+                    line = f"{line} / 詳細: {details}" if line else f"詳細: {details}"
+                line = re.sub(r'\s+', ' ', line)
+                line = line[:300]
+                if not _append_line(f"  - {line}"):
+                    break
+
+        context = '\n'.join(context_lines)[:max_context_len]
+        conn.close()
         system_prompt = (
             'あなたは日記アプリの検索アシスタントです。'
-            '与えられたノートの情報だけを根拠に、質問に短く答えてください。'
-            '情報が不足している場合は「見つかりませんでした。」と答えてください。'
-            '可能なら日付やページ名を明記し、最後に「根拠: ...」の形式で関連ページ名を列挙してください。'
+            '与えられたノートの情報だけを根拠に、簡潔に答えてください。'
+            '不明な点は推測せず「見つかりませんでした。」と答えてください。'
+            '可能なら日付やページ名を明記し、最後に「根拠:」の後に関連ページ名を列挙してください。'
         )
         user_prompt = f"質問: {query}\n\nノート:\n{context}"
 
