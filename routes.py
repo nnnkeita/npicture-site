@@ -237,14 +237,7 @@ def register_routes(app):
         )
         knowledge_block_id = cursor.lastrowid
 
-        props['resolved_at'] = resolved_date
-        props['knowledge_block_id'] = knowledge_block_id
-        if note:
-            props['resolution_note'] = note
-        cursor.execute(
-            'UPDATE blocks SET props = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            (json.dumps(props, ensure_ascii=False), row['id'])
-        )
+        cursor.execute('DELETE FROM blocks WHERE id = ?', (row['id'],))
         conn.commit()
         conn.close()
 

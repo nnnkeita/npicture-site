@@ -2147,9 +2147,7 @@
                     return;
                 }
                 if (target) {
-                    const nextProps = { ...targetProps, resolved_at: new Date().toISOString().slice(0, 10) };
-                    if (note) nextProps.resolution_note = note;
-                    target.props = JSON.stringify(nextProps);
+                    currentBlocks = (currentBlocks || []).filter(b => b.id !== blockId);
                     renderBlocks(currentBlocks);
                 }
             } catch (e) {
