@@ -444,6 +444,27 @@ def get_or_create_inbox():
     conn.close()
     return dict(inbox) if inbox else None
 
+def get_or_create_knowledge_base():
+    """'知識の宝庫'ページを取得、なければ作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM pages WHERE title = ? AND parent_id IS NULL LIMIT 1', ('📚 知識の宝庫',))
+    knowledge = cursor.fetchone()
+    if not knowledge:
+        cursor.execute('SELECT MAX(position) FROM pages WHERE parent_id IS NULL')
+        max_pos = cursor.fetchone()[0]
+        new_pos = (max_pos if max_pos is not None else -1) + 1
+        cursor.execute('INSERT INTO pages (title, icon, parent_id, position) VALUES (?, ?, ?, ?)',
+                       ('📚 知識の宝庫', '📚', None, new_pos))
+        knowledge_id = cursor.lastrowid
+        cursor.execute("INSERT INTO blocks (page_id, type, content, position) VALUES (?, 'text', '', ?)",
+                       (knowledge_id, 1000.0))
+        conn.commit()
+        cursor.execute('SELECT * FROM pages WHERE id = ?', (knowledge_id,))
+        knowledge = cursor.fetchone()
+    conn.close()
+    return dict(knowledge) if knowledge else None
+
 def get_or_create_finished():
     """'読了'ページを取得、なければ作成"""
     conn = get_db()

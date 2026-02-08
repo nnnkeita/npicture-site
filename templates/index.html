@@ -1811,7 +1811,7 @@
                 } else if (block.type === 'todo') {
                     const escapedTodo = (block.content || '').replace(/"/g, '&quot;');
                     contentHtml = `
-                        <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="updateBlock(${block.id}, 'checked', this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
+                        <input type="checkbox" ${block.checked ? 'checked' : ''} onchange="handleTodoToggle(${block.id}, this.checked)" class="mt-1.5 rounded text-blue-500 focus:ring-0 cursor-pointer">
                         <textarea class="flex-1 ${block.checked ? 'line-through text-gray-400' : ''} border-none focus:ring-0 bg-transparent cursor-text block-textarea" placeholder="やったことを入力..." onfocus="setFocusedBlock(${block.id})" oninput="updateBlock(${block.id}, 'content', this.value); autoResizeTextarea(this)" onkeydown="handleTodoKeydown(event, ${block.id})">${escapedTodo}</textarea>
                     `;
                 } else if (block.type === 'calorie') {
@@ -2067,6 +2067,31 @@
                     body: JSON.stringify(body) 
                 });
             });
+        }
+
+        function handleTodoToggle(blockId, checked) {
+            updateBlock(blockId, 'checked', checked);
+            if (!checked) return;
+            if (window.INBOX_ID !== null && currentPageId === window.INBOX_ID) {
+                resolveInboxItem(blockId);
+            }
+        }
+
+        async function resolveInboxItem(blockId) {
+            const note = prompt('解決メモ（任意）') || '';
+            try {
+                const res = await fetch('/api/inbox/resolve', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ block_id: blockId, note })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || '保存に失敗しました');
+                }
+            } catch (e) {
+                alert('保存に失敗しました');
+            }
         }
         async function deleteBlock(id) {
             await fetch(`/api/blocks/${id}`, { method: 'DELETE' });

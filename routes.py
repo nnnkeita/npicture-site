@@ -169,6 +169,87 @@ def register_routes(app):
         inbox = get_or_create_inbox()
         return jsonify(inbox if inbox else {'error': 'Failed to create inbox'}), 200 if inbox else 500
 
+    @app.route('/api/inbox/resolve', methods=['POST'])
+    def resolve_inbox_item():
+        """チェック済みの項目を知識の宝庫へ保存"""
+        data = request.json or {}
+        block_id = data.get('block_id')
+        note = (data.get('note') or '').strip()
+        if not block_id:
+            return jsonify({'error': 'block_id is required'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT b.*, p.title AS page_title, p.id AS page_id
+            FROM blocks b
+            JOIN pages p ON b.page_id = p.id
+            WHERE b.id = ?
+        ''', (block_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Block not found'}), 404
+
+        page_title = row['page_title'] or ''
+        if page_title != '🔖 あとで調べる':
+            conn.close()
+            return jsonify({'error': 'Only inbox items can be resolved'}), 400
+
+        raw_props = row['props'] or '{}'
+        try:
+            props = json.loads(raw_props) if isinstance(raw_props, str) else dict(raw_props)
+        except Exception:
+            props = {}
+
+        if props.get('resolved_at'):
+            conn.close()
+            return jsonify({'success': True, 'status': 'already_resolved'}), 200
+
+        from database import get_or_create_knowledge_base
+        knowledge = get_or_create_knowledge_base()
+        if not knowledge:
+            conn.close()
+            return jsonify({'error': 'Failed to create knowledge base'}), 500
+
+        resolved_date = datetime.now().strftime('%Y-%m-%d')
+        original_content = (row['content'] or '').strip()
+        content_lines = []
+        if original_content:
+            content_lines.append(original_content)
+        if note:
+            content_lines.append(f"解決メモ: {note}")
+        content_lines.append(f"解決日: {resolved_date}")
+        if not content_lines:
+            content_lines = ['（無題）', f"解決日: {resolved_date}"]
+        knowledge_content = '\n'.join(content_lines)
+
+        knowledge_block_props = {
+            'source_page_id': row['page_id'],
+            'source_block_id': row['id'],
+            'resolved_at': resolved_date,
+            'resolution_note': note
+        }
+        new_pos = get_block_next_position(cursor, knowledge['id'])
+        cursor.execute(
+            'INSERT INTO blocks (page_id, type, content, checked, position, props) VALUES (?, ?, ?, ?, ?, ?)',
+            (knowledge['id'], 'text', knowledge_content, 0, new_pos, json.dumps(knowledge_block_props, ensure_ascii=False))
+        )
+        knowledge_block_id = cursor.lastrowid
+
+        props['resolved_at'] = resolved_date
+        props['knowledge_block_id'] = knowledge_block_id
+        if note:
+            props['resolution_note'] = note
+        cursor.execute(
+            'UPDATE blocks SET props = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (json.dumps(props, ensure_ascii=False), row['id'])
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'knowledge_block_id': knowledge_block_id}), 200
+
     @app.route('/api/finished', methods=['GET'])
     def get_finished():
         """'読了'ページを取得"""
