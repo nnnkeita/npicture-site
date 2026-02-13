@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 import stripe
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
+import requests  # API通信用
+import urllib.parse # URLエンコード用
 
 from database import (
     init_db, get_or_create_inbox, get_or_create_finished, get_user_count, get_user_by_username, create_user,
@@ -25,8 +27,6 @@ from database import (
     mark_password_reset_token_used, update_user_stripe_customer, update_user_subscription,
     get_user_by_stripe_customer
 )
-
-
 
 from routes import register_routes
 
@@ -37,14 +37,13 @@ STATIC_FOLDER = os.path.join(BASE_DIR, 'static')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
 
-# .envファイルを読み込み（PythonAnywhereの無料プラン対応）
+# .envファイルを読み込み
 load_dotenv(os.path.join(BASE_DIR, '.env'))
-
 
 # === 設定値の定義 ===
 TTS_ENABLED = os.getenv('TTS_ENABLED', '1') == '1'
 CALORIE_ENABLED = os.getenv('CALORIE_ENABLED', '1') == '1'
-AUTH_ENABLED = os.getenv('AUTH_ENABLED', '0') == '1'  # デフォルトで認証はオフ
+AUTH_ENABLED = os.getenv('AUTH_ENABLED', '0') == '1'
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', '')
@@ -58,35 +57,13 @@ SMTP_USER = os.getenv('SMTP_USER', '')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 SMTP_FROM = os.getenv('SMTP_FROM', SMTP_USER)
 
-# === Flask アプリケーション初期化 ===
-app = Flask(__name__, template_folder=TEMPLATE_FOLDER, static_folder=STATIC_FOLDER)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-secret = os.getenv('APP_SECRET')
-if not secret:
-    print('Warning: APP_SECRET is not set. Set APP_SECRET for production use.')
-    secret = os.urandom(24)
-app.secret_key = secret
-
-if STRIPE_SECRET_KEY:
-    stripe.api_key = STRIPE_SECRET_KEY
-
-
-TTS_ENABLED = os.getenv('TTS_ENABLED', '1') == '1'
-CALORIE_ENABLED = os.getenv('CALORIE_ENABLED', '1') == '1'
-AUTH_ENABLED = os.getenv('AUTH_ENABLED', '0') == '1'  # デフォルトで認証はオフ
-STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
-STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
-STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', '')
-APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://127.0.0.1:5000')
-STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', f'{APP_BASE_URL}/billing?success=1')
-STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', f'{APP_BASE_URL}/billing?canceled=1')
-
-SMTP_HOST = os.getenv('SMTP_HOST', '')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USER = os.getenv('SMTP_USER', '')
-SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
-SMTP_FROM = os.getenv('SMTP_FROM', SMTP_USER)
+# --- Health Planet (Tanita) API 設定 ---
+TANITA_CLIENT_ID = os.getenv('TANITA_CLIENT_ID', '')
+TANITA_CLIENT_SECRET = os.getenv('TANITA_CLIENT_SECRET', '')
+TANITA_REDIRECT_URI = os.getenv('TANITA_REDIRECT_URI', f'{APP_BASE_URL}/tanita/callback')
+TANITA_AUTH_URL = 'https://www.healthplanet.jp/oauth/auth'
+TANITA_TOKEN_URL = 'https://www.healthplanet.jp/oauth/token'
+TANITA_DATA_URL = 'https://www.healthplanet.jp/status/innerscan.json'
 
 # ディレクトリ作成
 for folder in [UPLOAD_FOLDER, BACKUP_FOLDER]:
@@ -150,12 +127,14 @@ def require_login():
         'forgot_password',
         'terms',
         'privacy',
-        'tokusho'
+        'tokusho',
+        'tanita_callback' 
     }
     if request.endpoint in public_endpoints:
         return
     if not session.get('user_id'):
         return redirect(url_for('login'))
+    
     subscription_exempt = public_endpoints | {
         'billing',
         'billing_checkout',
@@ -164,6 +143,7 @@ def require_login():
     }
     if request.endpoint in subscription_exempt:
         return
+    
     user = get_user_by_id(session.get('user_id'))
     user = dict(user) if user else None
     if not _is_subscription_active(user):
@@ -177,7 +157,6 @@ def index():
 
 @app.route('/inbox')
 def inbox_page():
-    """あとで調べるページへのショートカットURL"""
     inbox = get_or_create_inbox()
     if inbox:
         return render_template('index.html', inbox_id=inbox['id'], tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
@@ -185,7 +164,6 @@ def inbox_page():
 
 @app.route('/finished')
 def finished_page():
-    """読了ページへのショートカットURL"""
     finished = get_or_create_finished()
     if finished:
         return render_template('index.html', finished_id=finished['id'], tts_enabled=TTS_ENABLED, calorie_enabled=CALORIE_ENABLED, current_user=session.get('username'))
@@ -193,7 +171,6 @@ def finished_page():
 
 @app.route('/chat')
 def chat_page():
-    """AIチャットページ"""
     return render_template('chat.html', current_user=session.get('username'))
 
 @app.route('/uploads/<filename>')
@@ -346,18 +323,14 @@ def stripe_webhook():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature')
     
-    # Try to verify the signature, but be lenient in development
     try:
         if STRIPE_WEBHOOK_SECRET:
             event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
         else:
-            # No secret set - use raw JSON (development mode)
             event = request.get_json() or {}
     except stripe.error.SignatureVerificationError as e:
-        # Signature verification failed - for development, log and try to parse anyway
         import sys
         print(f"[WEBHOOK] Signature verification failed (development): {e}", file=sys.stderr, flush=True)
-        # In development mode, try to parse the payload anyway
         import json
         try:
             event = json.loads(payload)
@@ -368,7 +341,6 @@ def stripe_webhook():
         print(f"[WEBHOOK] Unexpected error: {e}", file=sys.stderr, flush=True)
         return jsonify({'error': 'Webhook processing error'}), 400
 
-    # Process the event
     event_type = event.get('type')
     data = event.get('data', {}).get('object', {})
     
@@ -406,11 +378,92 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# === Health Planet (Tanita) Integration Routes ===
+
+@app.route('/tanita/login')
+def tanita_login():
+    """タニタの認証ページへリダイレクト"""
+    if not TANITA_CLIENT_ID:
+        # 環境変数が読み込めていない場合のデバッグ表示
+        print("Error: TANITA_CLIENT_ID is missing.")
+        return "タニタAPIのClient IDが設定されていません。.envを確認して再起動してください。", 500
+    
+    # URLエンコードを確実に行うためのパラメータ作成
+    params = {
+        'client_id': TANITA_CLIENT_ID,
+        'redirect_uri': TANITA_REDIRECT_URI,
+        'scope': 'innerscan',
+        'response_type': 'code'
+    }
+    
+    # 辞書からクエリパラメータ文字列を生成 (例: client_id=...&redirect_uri=http%3A%2F%2F...)
+    # これにより : や / が正しく %xx に変換されます
+    auth_query = urllib.parse.urlencode(params)
+    
+    # デバッグ用にコンソールにURLを表示
+    full_url = f"{TANITA_AUTH_URL}?{auth_query}"
+    print(f"--- Redirecting to Tanita ---")
+    print(full_url)
+    print(f"-----------------------------")
+
+    return redirect(full_url)
+
+@app.route('/tanita/callback')
+def tanita_callback():
+    """タニタからのコールバックを受け取りトークンを取得"""
+    code = request.args.get('code')
+    if not code:
+        return "認証エラー: コードがありません", 400
+
+    # トークン交換リクエスト
+    payload = {
+        'client_id': TANITA_CLIENT_ID,
+        'client_secret': TANITA_CLIENT_SECRET,
+        'redirect_uri': TANITA_REDIRECT_URI,
+        'code': code,
+        'grant_type': 'authorization_code'
+    }
+    
+    try:
+        response = requests.post(TANITA_TOKEN_URL, data=payload)
+        response.raise_for_status()
+        token_data = response.json()
+        
+        session['tanita_access_token'] = token_data.get('access_token')
+        
+        return redirect(url_for('get_weight_data'))
+        
+    except requests.exceptions.RequestException as e:
+        return f"トークン取得エラー: {e} - レスポンス: {response.text}", 400
+
+@app.route('/tanita/data')
+def get_weight_data():
+    """保存されたトークンを使ってデータを取得"""
+    access_token = session.get('tanita_access_token')
+    if not access_token:
+        return redirect(url_for('tanita_login'))
+
+    params = {
+        'access_token': access_token,
+        'date': 1,
+        'tag': '6021,6022'
+    }
+    
+    try:
+        response = requests.get(TANITA_DATA_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        return jsonify(data)
+        
+    except requests.exceptions.RequestException as e:
+        return f"データ取得エラー: {e}", 400
+
 # === APIルート登録 ===
 register_routes(app)
 
 # === アプリケーション起動 ===
 if __name__ == '__main__':
+    # ローカル開発用
     import webbrowser
     from threading import Timer
     
