@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiroku Journal</title>
+    <title>Kiroku journal記録雑誌</title>
     <link rel="manifest" href="/static/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -328,7 +328,7 @@
 
     <div class="w-72 bg-gray-50 border-r border-gray-200 flex flex-col h-full flex-shrink-0" id="sidebar">
         <div class="p-4 flex justify-between items-center">
-            <h1 class="font-bold text-gray-600 truncate">Kiroku Journal</h1>
+            <h1 class="font-bold text-gray-600 truncate">Kiroku journal記録雑誌</h1>
             <button onclick="openSearch()" class="text-gray-400 hover:text-gray-600" title="検索">🔍</button>
         </div>
         
@@ -393,6 +393,9 @@
                 <span class="text-xs text-gray-500">👤 {{ current_user }}</span>
                 {% endif %}
                 <a href="/billing" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">プラン</a>
+                <a href="/terms" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">利用規約</a>
+                <a href="/privacy" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">プライバシー</a>
+                <a href="/tokusho" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">特商法</a>
                 <a href="/logout" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">ログアウト</a>
             </div>
             <span id="save-status" class="text-xs text-gray-400">保存済み</span>
@@ -444,6 +447,7 @@
                             ← 前日
                         </button>
                         <span id="date-display" class="text-gray-400"></span>
+                        <span id="healthplanet-weight" class="hidden text-xs text-gray-500 bg-white/60 border border-gray-200 rounded px-2 py-1"></span>
                         <button onclick="navigateDate(1)" class="flex items-center gap-1 px-3 py-2 hover:bg-gray-100 rounded transition">
                             翌日 →
                         </button>
@@ -902,6 +906,39 @@
                 console.warn('Failed to fetch weather:', error);
                 document.getElementById('weather-info').innerHTML = '';
             }
+        }
+
+        function extractHealthplanetWeight(blocks) {
+            if (!Array.isArray(blocks)) return '';
+            const hpBlock = blocks.find(block => {
+                const props = parseBlockProps(block?.props) || {};
+                return props.source === 'healthplanet';
+            });
+            let content = hpBlock?.content || '';
+            if (!content) {
+                const fallback = blocks.find(block => (block?.content || '').includes('体重'));
+                content = fallback?.content || '';
+            }
+            const match = content.match(/体重\s*([0-9.]+)\s*kg/);
+            return match ? match[1] : '';
+        }
+
+        function updateHealthplanetWeightDisplay(blocks, isDatePage) {
+            const weightEl = document.getElementById('healthplanet-weight');
+            if (!weightEl) return;
+            if (!isDatePage) {
+                weightEl.innerText = '';
+                weightEl.classList.add('hidden');
+                return;
+            }
+            const weight = extractHealthplanetWeight(blocks);
+            if (!weight) {
+                weightEl.innerText = '';
+                weightEl.classList.add('hidden');
+                return;
+            }
+            weightEl.innerText = `体重 ${weight}kg`;
+            weightEl.classList.remove('hidden');
         }
 
         // --- 感情トラッカー機能 ---
@@ -1670,6 +1707,7 @@
                 moodTracker.classList.add('hidden');
                 gratitudeJournal.classList.add('hidden');
             }
+            updateHealthplanetWeightDisplay(page.blocks || [], Boolean(dateMatch));
             
             // カテゴリーページ（筋トレ、英語学習、食事）の場合はタブを表示
             const categoryTabsDiv = document.getElementById('category-tabs');

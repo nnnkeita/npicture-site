@@ -35,6 +35,11 @@ BACKUP_FOLDER = 'backups'
 
 
 def register_routes(app):
+    # HealthPlanet同期テストページ
+    @app.route('/healthplanet_sync_test')
+    def healthplanet_sync_test():
+        from flask import render_template
+        return render_template('healthplanet_sync.html')
     """全APIルートをアプリに登録"""
 
     def _get_healthplanet_config():
@@ -54,6 +59,16 @@ def register_routes(app):
             parsed = urllib.parse.parse_qs(raw_text)
             return {k: v[0] for k, v in parsed.items()}
 
+    def _healthplanet_urlopen(req, timeout=30):
+        proxy_url = os.getenv('HEALTHPLANET_PROXY_URL', '').strip()
+        if not proxy_url and os.getenv('PYTHONANYWHERE_DOMAIN'):
+            proxy_url = 'http://proxy.server:3128'
+        if proxy_url:
+            handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
+            opener = urllib.request.build_opener(handler)
+            return opener.open(req, timeout=timeout)
+        return urllib.request.urlopen(req, timeout=timeout)
+
     def _fetch_healthplanet_innerscan(access_token, from_str, to_str, tags):
         params = {
             'access_token': access_token,
@@ -64,7 +79,7 @@ def register_routes(app):
         }
         url = 'https://www.healthplanet.jp/status/innerscan.json?' + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, method='GET')
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _healthplanet_urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode('utf-8'))
 
     def _format_healthplanet_line(measurements):
@@ -115,6 +130,10 @@ def register_routes(app):
         if not token_row:
             return False, 'HealthPlanetが未連携です。'
 
+        print(f"[DEBUG] Token Row: {token_row}")
+        print(f"[DEBUG] Access Token: {token_row['access_token']}, Expires At: {token_row['expires_at']}")
+        print(f"[DEBUG] Time Range: From {from_str} To {to_str}")
+
         access_token = token_row['access_token']
         expires_at = token_row['expires_at']
         if expires_at:
@@ -132,24 +151,58 @@ def register_routes(app):
 
         try:
             data = _fetch_healthplanet_innerscan(access_token, from_str, to_str, ['6021', '6022', '6028'])
-        except Exception:
+            print(f"[DEBUG] Fetched Data: {data}")
+        except Exception as e:
+            print(f"[ERROR] Fetch HealthPlanet Data Failed: {e}")
             return False, 'HealthPlanetの取得に失敗しました。'
 
         measurements = {}
         for entry in data.get('data', []) if isinstance(data, dict) else []:
+            print(f"[DEBUG] Processing Entry: {entry}")
             tag = str(entry.get('tag', ''))
             keydata = str(entry.get('keydata', '')).strip()
             date_value = str(entry.get('date', '')).strip()
             if not tag or not keydata:
+                print(f"[DEBUG] Skipping Entry: {entry}")
                 continue
             current = measurements.get(tag)
             if not current or date_value > current.get('date', ''):
                 measurements[tag] = {'value': keydata, 'date': date_value}
 
         latest_values = {k: v.get('value') for k, v in measurements.items()}
+        latest_date_value = max((v.get('date', '') for v in measurements.values()), default='')
+        print(f"[DEBUG] Latest Values: {latest_values}")
+        print(f"[DEBUG] Latest Date Value: {latest_date_value}")
+
         content = _format_healthplanet_line(latest_values)
         if not content:
-            return False, '今日のデータが見つかりませんでした。'
+            range_start = (jst_now - timedelta(days=90)).strftime('%Y%m%d%H%M%S')
+            try:
+                data = _fetch_healthplanet_innerscan(access_token, range_start, to_str, ['6021', '6022', '6028'])
+            except Exception:
+                return False, 'HealthPlanetの取得に失敗しました。'
+            measurements = {}
+            for entry in data.get('data', []) if isinstance(data, dict) else []:
+                tag = str(entry.get('tag', ''))
+                keydata = str(entry.get('keydata', '')).strip()
+                date_value = str(entry.get('date', '')).strip()
+                if not tag or not keydata:
+                    continue
+                current = measurements.get(tag)
+                if not current or date_value > current.get('date', ''):
+                    measurements[tag] = {'value': keydata, 'date': date_value}
+            latest_values = {k: v.get('value') for k, v in measurements.items()}
+            latest_date_value = max((v.get('date', '') for v in measurements.values()), default='')
+            content = _format_healthplanet_line(latest_values)
+            if not content:
+                return False, 'データが見つかりませんでした。'
+
+        if latest_date_value:
+            try:
+                latest_dt = datetime.strptime(latest_date_value, '%Y%m%d%H%M')
+                date_str = latest_dt.strftime('%Y-%m-%d')
+            except Exception:
+                pass
 
         conn = get_db()
         cursor = conn.cursor()
@@ -1195,7 +1248,7 @@ def register_routes(app):
                 data=payload,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'}
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with _healthplanet_urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode('utf-8')
             token_data = _parse_healthplanet_token_response(raw)
         except urllib.error.HTTPError as e:
@@ -1224,11 +1277,14 @@ def register_routes(app):
         save_healthplanet_token(access_token, refresh_token, expires_at, scope)
         return 'HealthPlanetの連携が完了しました。'
 
-    @app.route('/api/healthplanet/sync', methods=['POST'])
+    @app.route('/api/healthplanet/sync', methods=['GET', 'POST'])
     def healthplanet_sync():
-        ok, message = sync_healthplanet_today()
-        status = 200 if ok else 400
-        return jsonify({'message': message}), status
+        if request.method == 'POST':
+            ok, message = sync_healthplanet_today()
+            status = 200 if ok else 400
+            return jsonify({'message': message}), status
+        else:
+            return jsonify({'error': 'Method not allowed. Please use POST method.'}), 405
 
     @app.route('/api/pages/<int:page_id>/blocks', methods=['POST'])
     def create_block(page_id):

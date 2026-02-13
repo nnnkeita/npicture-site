@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>HealthPlanet同期テスト</title>
+</head>
+<body>
+  <h1>HealthPlanet同期テスト</h1>
+  <button id="syncBtn">同期実行</button>
+  <pre id="result"></pre>
+  <script>
+    document.getElementById('syncBtn').onclick = function() {
+      fetch('/api/healthplanet/sync', {
+        method: 'POST'
+      })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      })
+      .catch(e => {
+        document.getElementById('result').textContent = 'エラー: ' + e;
+      });
+    };
+  </script>
+</body>
+</html>
