@@ -26,9 +26,8 @@ from database import (
     get_user_by_stripe_customer
 )
 
-
-
 from routes import register_routes
+from backup_scheduler import init_backup_scheduler
 
 # === パス設定 ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -70,6 +69,9 @@ app.secret_key = secret
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
+
+# === バックアップスケジューラー初期化 ===
+init_backup_scheduler(app)
 
 
 TTS_ENABLED = os.getenv('TTS_ENABLED', '1') == '1'

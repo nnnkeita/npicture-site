@@ -1,5 +1,10 @@
 # データベースはGitに上げない
 notion.db
+notion.db-*
+*.backup
+
+# バックアップフォルダ（ローカルテスト用）
+backups/
 
 # 画像フォルダもGitに上げない
 uploads/

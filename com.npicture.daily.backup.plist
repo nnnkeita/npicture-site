@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ジョブの一意識別子 -->
+    <key>Label</key>
+    <string>com.npicture.daily.backup</string>
+    
+    <!-- 実行するプログラム（フルパス） -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/nishiharakeita/npicture-site/.venv/bin/python3</string>
+        <string>/Users/nishiharakeita/npicture-site/daily_backup.py</string>
+    </array>
+    
+    <!-- 毎日00:00に実行 -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <!-- 毎日 -->
+            <key>Hour</key>
+            <integer>0</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+    
+    <!-- 標準出力・標準エラー出力をログファイルに記録 -->
+    <key>StandardOutPath</key>
+    <string>/Users/nishiharakeita/npicture-site/backups/daily_backup_stdout.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/nishiharakeita/npicture-site/backups/daily_backup_stderr.log</string>
+    
+    <!-- 作業ディレクトリ -->
+    <key>WorkingDirectory</key>
+    <string>/Users/nishiharakeita/npicture-site</string>
+    
+    <!-- ジョブが実行中に既に起動しようとする場合、スキップ -->
+    <key>StartInterval</key>
+    <integer>86400</integer>
+    
+    <!-- 失敗時も無視して続行 -->
+    <key>KeepAlive</key>
+    <false/>
+    
+    <!-- ユーザーがログアウト後も実行 -->
+    <key>RunAtLoad</key>
+    <false/>
+    
+    <!-- プロセスタイプ -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
