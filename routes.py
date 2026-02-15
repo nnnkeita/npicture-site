@@ -1929,10 +1929,52 @@ def register_routes(app):
         if not deploy_token or provided != deploy_token:
             return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
 
-        subprocess.run(['git', 'fetch', '--all'], cwd='/home/nnnkeita/mysite')
-        subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd='/home/nnnkeita/mysite')
-        subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'])
-        return jsonify({'status': 'success', 'message': 'Deployed and Reloaded!'})
+        results = {'steps': []}
+        try:
+            # 1. Git fetch all
+            print("[DEPLOY] Running git fetch --all...")
+            result = subprocess.run(['git', 'fetch', '--all'], cwd='/home/nnnkeita/mysite', capture_output=True, text=True, timeout=30)
+            results['steps'].append({'step': 'git_fetch', 'code': result.returncode})
+            print(f"[DEPLOY] git fetch result: {result.returncode}")
+            
+            # 2. Git reset hard to origin/main
+            print("[DEPLOY] Running git reset --hard origin/main...")
+            result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd='/home/nnnkeita/mysite', capture_output=True, text=True, timeout=30)
+            results['steps'].append({'step': 'git_reset', 'code': result.returncode})
+            print(f"[DEPLOY] git reset result: {result.returncode}")
+            
+            # 3. Ensure database indexes (without app context, just call directly)
+            print("[DEPLOY] Ensuring database indexes...")
+            try:
+                from database import ensure_indexes
+                ensure_indexes()
+                results['steps'].append({'step': 'ensure_indexes', 'status': 'ok'})
+            except Exception as idx_error:
+                print(f"[DEPLOY] Index ensure error: {idx_error}")
+                results['steps'].append({'step': 'ensure_indexes', 'error': str(idx_error)})
+            
+            # 4. Reload WSGI
+            print("[DEPLOY] Reloading WSGI...")
+            result = subprocess.run(['touch', '/var/www/nnnkeita_pythonanywhere_com_wsgi.py'], capture_output=True, text=True, timeout=10)
+            results['steps'].append({'step': 'wsgi_reload', 'code': result.returncode})
+            print(f"[DEPLOY] WSGI reload result: {result.returncode}")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Deployed, indexes ensured, and reloaded!',
+                'results': results
+            }), 200
+            
+        except Exception as e:
+            print(f"[DEPLOY] Error during deployment: {e}")
+            import traceback
+            traceback.print_exc()
+            results['error'] = str(e)
+            return jsonify({
+                'status': 'error',
+                'message': f'Deployment error: {str(e)}',
+                'results': results
+            }), 500
 
     @app.route('/download_db', methods=['GET'])
     def download_db():

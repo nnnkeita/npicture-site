@@ -552,3 +552,48 @@ def get_or_create_finished():
 
     conn.close()
     return dict(finished) if finished else None
+def ensure_indexes():
+    """必要なインデックスが存在することを確認し、存在しなければ作成"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 既存のインデックスを取得
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
+    existing_indexes = {row[0] for row in cursor.fetchall()}
+    
+    # 作成が必要なインデックス
+    required_indexes = [
+        {
+            'name': 'idx_pages_parent_position',
+            'table': 'pages',
+            'columns': ['parent_id', 'position', 'is_deleted'],
+            'sql': 'CREATE INDEX IF NOT EXISTS idx_pages_parent_position ON pages(parent_id, position, is_deleted)'
+        },
+        {
+            'name': 'idx_pages_is_deleted',
+            'table': 'pages',
+            'columns': ['is_deleted'],
+            'sql': 'CREATE INDEX IF NOT EXISTS idx_pages_is_deleted ON pages(is_deleted)'
+        },
+        {
+            'name': 'idx_blocks_page_position',
+            'table': 'blocks',
+            'columns': ['page_id', 'position'],
+            'sql': 'CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_id, position)'
+        },
+    ]
+    
+    created_count = 0
+    for idx_info in required_indexes:
+        idx_name = idx_info['name']
+        try:
+            cursor.execute(idx_info['sql'])
+            created_count += 1
+            print(f"✅ Index ensured: {idx_name}")
+        except sqlite3.OperationalError as e:
+            print(f"⚠️  Index creation failed for {idx_name}: {e}")
+    
+    conn.commit()
+    conn.close()
+    
+    return created_count
