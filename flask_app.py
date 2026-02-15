@@ -462,6 +462,71 @@ def get_weight_data():
     except requests.exceptions.RequestException as e:
         return f"データ取得エラー: {e}", 400
 
+# === 診断エンドポイント ===
+@app.route('/api/diagnose')
+def diagnose_database():
+    """データベースの状態を診断"""
+    import sqlite3
+    from datetime import datetime
+    
+    result = {}
+    
+    # ファイル情報
+    db_path = 'notion.db'
+    if os.path.exists(db_path):
+        stat = os.stat(db_path)
+        result['db_size_kb'] = stat.st_size / 1024
+        result['db_modified'] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+    
+    # データベース接続と確認
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE is_deleted = 0")
+        result['total_pages'] = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE title LIKE '%食事%' AND is_deleted = 0")
+        result['meal_pages'] = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE title LIKE '%日記%' AND is_deleted = 0")
+        result['diary_pages'] = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE title = '感謝日記' AND is_deleted = 0")
+        result['gratitude_pages'] = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT title, id FROM pages WHERE title LIKE '20%年%月' AND is_deleted = 0 ORDER BY title DESC LIMIT 1")
+        latest_month = cursor.fetchone()
+        if latest_month:
+            result['latest_month_title'] = latest_month['title']
+            result['latest_month_id'] = latest_month['id']
+            
+            cursor.execute("""
+                SELECT title, icon FROM pages 
+                WHERE parent_id = ? AND is_deleted = 0 
+                ORDER BY position
+            """, (latest_month['id'],))
+            children = cursor.fetchall()
+            result['month_children'] = [{'title': c['title'], 'icon': c['icon']} for c in children]
+        
+        cursor.execute("SELECT COUNT(*) FROM blocks")
+        result['total_blocks'] = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM users")
+        result['total_users'] = cursor.fetchone()[0]
+        
+        conn.close()
+        result['status'] = 'ok'
+        
+    except Exception as e:
+        result['status'] = 'error'
+        result['error'] = str(e)
+        import traceback
+        result['traceback'] = traceback.format_exc()
+    
+    return jsonify(result)
+
 # === APIルート登録 ===
 register_routes(app)
 
