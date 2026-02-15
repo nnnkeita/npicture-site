@@ -176,6 +176,7 @@
                         <button onmousedown="event.preventDefault(); addBlock('text'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📝 テキスト</button>
                         <button onmousedown="event.preventDefault(); addBlock('h1'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">📌 見出し</button>
                         <button onmousedown="event.preventDefault(); addBlock('todo'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">☑️ チェックリスト</button>
+                        <button onmousedown="event.preventDefault(); addBlock('calorie'); hideBlockMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded">🍽️ カロリー</button>
                     </div>
                 </div>
             </div>
@@ -278,6 +279,33 @@
                 contentHtml = `<input class="text-3xl font-bold w-full border-none focus:ring-0 bg-transparent" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">`;
             } else if (block.type === 'todo') {
                 contentHtml = `<input type="checkbox" ${block.checked ? 'checked' : ''} class="mt-1.5"><input class="flex-1 border-none focus:ring-0 bg-transparent" value="${block.content}" oninput="updateBlock(${block.id}, 'content', this.value)">`;
+            } else if (block.type === 'calorie') {
+                // Parse props JSON
+                let props = {};
+                try {
+                    props = typeof block.props === 'string' ? JSON.parse(block.props) : block.props;
+                } catch(e) {
+                    console.error('Failed to parse calorie props:', e);
+                }
+                
+                const titleHtml = props.title ? `<div class="font-bold text-green-700 mb-2">${props.title}</div>` : '';
+                const totalKcalHtml = props.total_kcal ? `<div class="text-sm text-green-600 font-semibold mb-2">合計: ${props.total_kcal} kcal</div>` : '';
+                const itemsHtml = props.items && Array.isArray(props.items) ? 
+                    `<div class="text-sm text-gray-600 space-y-1">${
+                        props.items.map(item => {
+                            const mark = item.source === 'web' ? '（web）' : (item.is_estimated ? '（推定）' : '');
+                            return `<div>• ${item.input}: ${item.kcal} kcal ${mark}</div>`;
+                        }).join('')
+                    }</div>` : '';
+                
+                contentHtml = `
+                    <div class="w-full border border-green-200 rounded-lg p-3 bg-green-50 hover:bg-green-100 transition" data-block-id="${block.id}">
+                        ${titleHtml}
+                        ${totalKcalHtml}
+                        ${itemsHtml || '<div class="text-sm text-gray-400">カロリーデータなし</div>'}
+                        <button onclick="renderCalorieRows(${block.id})" class="mt-2 text-xs text-green-600 hover:text-green-800 underline">編集</button>
+                    </div>
+                `;
             } else {
                 contentHtml = `<textarea class="w-full border-none focus:ring-0 bg-transparent resize-none" rows="1" oninput="updateBlock(${block.id}, 'content', this.value); this.style.height='auto';this.style.height=this.scrollHeight+'px'">${block.content || ''}</textarea>`;
             }
