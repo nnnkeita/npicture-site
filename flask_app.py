@@ -89,6 +89,32 @@ if STRIPE_SECRET_KEY:
 # === バックアップスケジューラー初期化 ===
 init_backup_scheduler(app)
 
+# === データベース復元関数（本番環境用） ===
+def _restore_db_from_dump_if_needed():
+    """DBが空の場合、SQLダンプから復元"""
+    import sqlite3
+    db_path = 'notion.db'
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pages'")
+        pages_exists = cursor.fetchone() is not None
+        conn.close()
+        
+        if not pages_exists:
+            print("[INFO] Database tables not found. Restoring from SQL dump...")
+            dump_path = os.path.join(BASE_DIR, 'notion_dump.sql')
+            if os.path.exists(dump_path):
+                conn = sqlite3.connect(db_path)
+                with open(dump_path, 'r', encoding='utf-8') as f:
+                    sql_script = f.read()
+                    conn.executescript(sql_script)
+                conn.commit()
+                conn.close()
+                print("[INFO] Database restored successfully from notion_dump.sql")
+    except Exception as e:
+        print(f"[WARNING] Failed to restore DB from dump: {e}")
+
 # === 課金判定 ===
 def _is_subscription_active(user):
     if not user:
@@ -548,6 +574,7 @@ else:
     # PythonAnywhere用のWSGI
     try:
         with app.app_context():
+            _restore_db_from_dump_if_needed()
             init_db()
     except Exception as e:
         print(f"Database initialization error: {e}")
