@@ -636,6 +636,60 @@ def diagnose_database():
     
     return jsonify(result)
 
+@app.route('/api/check_meal_structure')
+def check_meal_structure():
+    """食事ページの親子関係を確認"""
+    import sqlite3
+    
+    result = {'status': 'ok', 'meal_pages': [], 'parent_info': {}}
+    
+    try:
+        conn = sqlite3.connect('notion.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # 食事ページを全取得
+        cursor.execute("SELECT id, title, parent_id FROM pages WHERE title = '食事' AND is_deleted = 0")
+        meal_pages = cursor.fetchall()
+        
+        for meal_page in meal_pages:
+            page_id = meal_page['id']
+            parent_id = meal_page['parent_id']
+            
+            page_info = {
+                'id': page_id,
+                'parent_id': parent_id,
+                'title': meal_page['title']
+            }
+            result['meal_pages'].append(page_info)
+            
+            # 親ページ情報を取得
+            if parent_id:
+                cursor.execute("SELECT id, title FROM pages WHERE id = ?", (parent_id,))
+                parent = cursor.fetchone()
+                if parent:
+                    parent_title = parent['title']
+                    if parent_title not in result['parent_info']:
+                        result['parent_info'][parent_title] = []
+                    result['parent_info'][parent_title].append(page_id)
+        
+        # 2月4日ページの確認
+        cursor.execute("SELECT id FROM pages WHERE title = '2026年2月4日'")
+        feb4 = cursor.fetchone()
+        if feb4:
+            result['feb4_page_id'] = feb4['id']
+            cursor.execute("SELECT id, title, icon FROM pages WHERE parent_id = ? AND is_deleted = 0", (feb4['id'],))
+            children = cursor.fetchall()
+            result['feb4_children'] = [{'id': c['id'], 'title': c['title'], 'icon': c['icon']} for c in children]
+        
+        conn.close()
+        
+    except Exception as e:
+        result['status'] = 'error'
+        result['error'] = str(e)
+    
+    return jsonify(result)
+
 # === APIルート登録 ===
 register_routes(app)
 
