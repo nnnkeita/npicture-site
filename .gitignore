@@ -1,5 +1,5 @@
 # データベースはGitに上げない
-notion.db
+# notion.db  # 本番環境で必須なため、コミット対象にする
 notion.db-*
 *.backup
 
