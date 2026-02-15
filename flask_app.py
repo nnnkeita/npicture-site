@@ -115,6 +115,89 @@ def _restore_db_from_dump_if_needed():
     except Exception as e:
         print(f"[WARNING] Failed to restore DB from dump: {e}")
 
+def _restore_meal_blocks_if_needed():
+    """食事ブロックが存在しない場合、JSONから復元"""
+    import sqlite3
+    import json
+    db_path = 'notion.db'
+    json_path = os.path.join(BASE_DIR, 'meal_blocks_export.json')
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # 食事ページの数を確認
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE title = '食事' AND is_deleted = 0")
+        meal_count = cursor.fetchone()[0]
+        conn.close()
+        
+        if meal_count == 0 and os.path.exists(json_path):
+            print("[INFO] No meal pages found. Restoring from meal_blocks_export.json...")
+            
+            with open(json_path, 'r', encoding='utf-8') as f:
+                meal_data = json.load(f)
+            
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            id_map = {}
+            
+            # 食事ページを復元
+            for page_info in meal_data['meal_pages']:
+                original_id = page_info['original_id']
+                title = page_info['title']
+                parent_id = page_info['parent_id']
+                icon = page_info['icon']
+                position = page_info['position']
+                
+                # 既に存在するか確認
+                cursor.execute(
+                    "SELECT id FROM pages WHERE title = ? AND parent_id = ? AND icon = ?",
+                    (title, parent_id, icon)
+                )
+                existing = cursor.fetchone()
+                
+                if existing:
+                    new_id = existing[0]
+                else:
+                    cursor.execute(
+                        "INSERT INTO pages (title, parent_id, icon, position, is_deleted) VALUES (?, ?, ?, ?, 0)",
+                        (title, parent_id, icon, position)
+                    )
+                    new_id = cursor.lastrowid
+                
+                id_map[original_id] = new_id
+            
+            # ブロックを復元
+            for block_info in meal_data['meal_blocks']:
+                original_page_id = block_info['original_page_id']
+                new_page_id = id_map.get(original_page_id)
+                
+                if new_page_id:
+                    cursor.execute(
+                        "SELECT id FROM blocks WHERE page_id = ? AND type = ? AND position = ?",
+                        (new_page_id, block_info['type'], block_info['position'])
+                    )
+                    if not cursor.fetchone():
+                        cursor.execute(
+                            "INSERT INTO blocks (page_id, type, content, checked, position, collapsed, details, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                new_page_id,
+                                block_info['type'],
+                                block_info['content'],
+                                block_info['checked'],
+                                block_info['position'],
+                                block_info['collapsed'],
+                                block_info['details'],
+                                block_info['props']
+                            )
+                        )
+            
+            conn.commit()
+            conn.close()
+            print(f"[INFO] Restored {len(meal_data['meal_pages'])} meal pages and {len(meal_data['meal_blocks'])} blocks")
+    except Exception as e:
+        print(f"[WARNING] Failed to restore meal blocks: {e}")
+
 # === 課金判定 ===
 def _is_subscription_active(user):
     if not user:
@@ -575,6 +658,7 @@ else:
     try:
         with app.app_context():
             _restore_db_from_dump_if_needed()
+            _restore_meal_blocks_if_needed()
             init_db()
     except Exception as e:
         print(f"Database initialization error: {e}")
