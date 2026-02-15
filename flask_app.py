@@ -44,7 +44,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # === 設定値の定義 ===
 TTS_ENABLED = os.getenv('TTS_ENABLED', '1') == '1'
 CALORIE_ENABLED = os.getenv('CALORIE_ENABLED', '1') == '1'
-AUTH_ENABLED = os.getenv('AUTH_ENABLED', '0') == '1'
+AUTH_ENABLED = False  # ログイン認証を完全に無効化
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', '')
