@@ -690,6 +690,65 @@ def check_meal_structure():
     
     return jsonify(result)
 
+@app.route('/api/check_meal_blocks_detail/<int:page_id>')
+def check_meal_blocks_detail(page_id):
+    """特定の食事ページのブロック詳細を確認"""
+    import sqlite3
+    import json
+    
+    result = {'status': 'ok', 'page_id': page_id, 'blocks': []}
+    
+    try:
+        conn = sqlite3.connect('notion.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # ページ情報確認
+        cursor.execute("SELECT title, icon FROM pages WHERE id = ?", (page_id,))
+        page = cursor.fetchone()
+        if page:
+            result['page_title'] = page['title']
+            result['page_icon'] = page['icon']
+        
+        # ブロック取得
+        cursor.execute("""
+            SELECT id, type, content, position, props
+            FROM blocks
+            WHERE page_id = ?
+            ORDER BY position
+        """, (page_id,))
+        
+        blocks = cursor.fetchall()
+        for block in blocks:
+            block_info = {
+                'id': block['id'],
+                'type': block['type'],
+                'position': block['position'],
+                'content': block['content'],
+                'props': block['props']
+            }
+            
+            # propsをパース（JSONの場合）
+            try:
+                if block['props']:
+                    props_obj = json.loads(block['props']) if isinstance(block['props'], str) else block['props']
+                    if isinstance(props_obj, dict) and 'items' in props_obj:
+                        block_info['props_items_count'] = len(props_obj.get('items', []))
+                        block_info['props_total_kcal'] = props_obj.get('total_kcal')
+            except Exception as e:
+                block_info['props_parse_error'] = str(e)
+            
+            result['blocks'].append(block_info)
+        
+        result['blocks_count'] = len(result['blocks'])
+        conn.close()
+        
+    except Exception as e:
+        result['status'] = 'error'
+        result['error'] = str(e)
+    
+    return jsonify(result)
+
 # === APIルート登録 ===
 register_routes(app)
 
